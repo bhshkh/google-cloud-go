@@ -21,11 +21,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net/url"
 	"os"
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -751,6 +753,106 @@ func TestIntegration_Filters(t *testing.T) {
 			t.Errorf("compare: got=%v, want=%v", got, want)
 		}
 	})
+}
+
+func populateData(t *testing.T, client *Client, childrenCount int, time int64, testKey string) ([]*Key, *Key, func()) {
+	ctx := context.Background()
+	parent := NameKey("SQParent", keyPrefix+testKey+suffix, nil)
+
+	children := []*SQChild{}
+
+	for i := 0; i < childrenCount; i++ {
+		children = append(children, &SQChild{I: i, T: time, U: time, V: 1.5, W: "str"})
+	}
+	keys := make([]*Key, childrenCount)
+	for i := range keys {
+		keys[i] = NameKey("SQChild", "sqChild"+fmt.Sprint(i), parent)
+	}
+	keys, err := client.PutMulti(ctx, keys, children)
+	if err != nil {
+		t.Fatalf("client.PutMulti: %v", err)
+	}
+
+	cleanup := func() {
+		err := client.DeleteMulti(ctx, keys)
+		if err != nil {
+			t.Errorf("client.DeleteMulti: %v", err)
+		}
+	}
+	return keys, parent, cleanup
+}
+
+func TestIntegration_BeginLaterPerf(t *testing.T) {
+
+	avgTime := float64(0)
+	numRuns := 20
+
+	for i := 0; i < numRuns; i++ {
+		withoutBeginLaterStart := time.Now()
+		run1(t, false)
+		withoutBeginLaterEnd := time.Now()
+		withoutBeginLaterElapsed := withoutBeginLaterEnd.Sub(withoutBeginLaterStart)
+
+		avgTime += float64(withoutBeginLaterElapsed.Nanoseconds())
+	}
+	avgTime /= float64(numRuns)
+	fmt.Printf("avg time: %v\n", avgTime/math.Pow(10, 9))
+
+}
+
+func run1(t *testing.T, beginLater bool) {
+	ctx := context.Background()
+	client := newTestClient(ctx, t)
+	defer client.Close()
+
+	// Populate data
+	now := timeNow.Truncate(time.Millisecond).Unix()
+	numKeys := 50
+	keys, _, cleanupData := populateData(t, client, numKeys, now, "BeginLaterPerf"+fmt.Sprint(beginLater))
+	defer cleanupData()
+
+	// Create transaction
+	txOpts := []TransactionOption{}
+	tx, err := client.NewTransaction(ctx, txOpts...)
+	if err != nil {
+		t.Fatalf("Failed to create transaction: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	numThreads := 5
+	wg.Add(5)
+	for i := 0; i < numThreads; i++ {
+		keysPerThread := numKeys / numThreads
+		// Perform operations on transaction in multiple threads
+		errChan := make(chan error)
+		go runTransactionThread(&wg, errChan, tx, keys[i*keysPerThread:i*keysPerThread+keysPerThread-1])
+		err := <-errChan
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := tx.Commit(); err != nil {
+		t.Fatalf("Commit got: %v, want: nil", err)
+	}
+	wg.Wait()
+}
+
+func runTransactionThread(wg *sync.WaitGroup, errChan chan error, tx *Transaction, keys []*Key) {
+	defer wg.Done()
+	for i, key := range keys {
+		dst := &SQChild{}
+		if err := tx.Get(key, dst); err != nil {
+			errChan <- fmt.Errorf("[%v] Get got: %v, want: nil", i, err)
+			return
+		}
+
+		dst.I++
+		if _, err := tx.Put(key, dst); err != nil {
+			errChan <- fmt.Errorf("[%v] Put got: %v, want: nil", i, err)
+			return
+		}
+	}
+	errChan <- nil
 }
 
 func TestIntegration_AggregationQueriesInTransaction(t *testing.T) {
