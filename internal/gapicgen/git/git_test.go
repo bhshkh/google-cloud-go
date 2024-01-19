@@ -72,7 +72,11 @@ func TestFormatChanges(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := FormatChanges(tc.changes, tc.onlyGapics); got != tc.want {
+			c, err := FormatChanges(tc.changes, tc.onlyGapics)
+			if err != nil {
+				t.Errorf("FormatChanges err: %v\n", err)
+			}
+			if got := c; got != tc.want {
 				t.Errorf("FormatChanges() = %q, want %q", got, tc.want)
 			}
 		})

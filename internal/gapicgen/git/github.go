@@ -47,9 +47,22 @@ If you have been assigned to review this PR, please:
 - Approve and submit this PR if you believe it's ready to ship. That will prompt
 genbot to assign reviewers to the google-cloud-go PR.
 `
+	maxCommitBodyLen = 65536
 )
 
-var conventionalCommitScopeRe = regexp.MustCompile(`.*\((.*)\): .*`)
+var (
+	maxChangesLen             = maxCommitBodyLen - len(genprotoCommitBody)
+	conventionalCommitScopeRe = regexp.MustCompile(`.*\((.*)\): .*`)
+)
+
+type ErrCommitBodyTooLong struct {
+	Length        int
+	MaxCommitDate string
+}
+
+func (e ErrCommitBodyTooLong) Error() string {
+	return fmt.Sprintf("Commit body too long. Current length: %v. Max length: %v", e.Length, maxCommitBodyLen)
+}
 
 // PullRequest represents a GitHub pull request.
 type PullRequest struct {
@@ -163,7 +176,11 @@ func (gc *GithubClient) CreateGenprotoPR(ctx context.Context, genprotoDir string
 	sb.WriteString(genprotoCommitBody)
 	if !hasCorrespondingPR {
 		sb.WriteString("\n\nThere is no corresponding google-cloud-go PR.\n")
-		sb.WriteString(FormatChanges(changes, false))
+		formatted, err := FormatChanges(changes, false)
+		if err != nil {
+			return 0, err
+		}
+		sb.WriteString(formatted)
 	}
 	body := sb.String()
 
@@ -191,7 +208,7 @@ git push origin $BRANCH_NAME
 	if err := c.Run(); err != nil {
 		return 0, err
 	}
-
+	return 0, nil
 	head := fmt.Sprintf("googleapis:" + genprotoBranchName)
 	base := "main"
 	t := genprotoCommitTitle // Because we have to take the address.

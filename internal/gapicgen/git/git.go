@@ -26,25 +26,29 @@ import (
 
 // ChangeInfo represents a change and its associated metadata.
 type ChangeInfo struct {
-	Body           string
-	Title          string
-	GoogleapisHash string
+	Body               string
+	Title              string
+	GoogleapisHash     string
+	GoogleapisHashDate string
 }
 
 // FormatChanges turns a slice of changes into formatted string that will match
 // the conventional commit footer pattern. This will allow these changes to be
 // parsed into the changelog.
-func FormatChanges(changes []*ChangeInfo, onlyGapicChanges bool) string {
+func FormatChanges(changes []*ChangeInfo, onlyGapicChanges bool) (string, error) {
 	if len(changes) == 0 {
-		return ""
+		return "", nil
 	}
 	var sb strings.Builder
 	sb.WriteString("\nChanges:\n\n")
+	prevFormattedDate := ""
 	for _, c := range changes {
 		if onlyGapicChanges {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("%s\n", c.Title))
+
+		var currChangeBody strings.Builder
+		currChangeBody.WriteString(fmt.Sprintf("%s\n", c.Title))
 
 		// Format the commit body to conventional commit footer standards.
 		splitBody := strings.Split(c.Body, "\n")
@@ -52,14 +56,24 @@ func FormatChanges(changes []*ChangeInfo, onlyGapicChanges bool) string {
 			splitBody[i] = fmt.Sprintf("  %s", splitBody[i])
 		}
 		body := strings.Join(splitBody, "\n")
-		sb.WriteString(fmt.Sprintf("%s\n\n", body))
+		currChangeBody.WriteString(fmt.Sprintf("%s\n\n", body))
+
+		// Check if adding this change exceeds max length
+		if currChangeBody.Len()+sb.Len() >= maxChangesLen {
+			return "", ErrCommitBodyTooLong{
+				MaxCommitDate: prevFormattedDate,
+			}
+		}
+
+		sb.WriteString(currChangeBody.String())
+		prevFormattedDate = c.GoogleapisHashDate
 	}
 	// If the buffer is empty except for the "Changes:" text return an empty
 	// string.
 	if sb.Len() == 11 {
-		return ""
+		return "", nil
 	}
-	return sb.String()
+	return sb.String(), nil
 }
 
 // ParseChangeInfo gets the ChangeInfo for a given googleapis hash.
@@ -67,7 +81,7 @@ func ParseChangeInfo(googleapisDir string, hashes []string) ([]*ChangeInfo, erro
 	var changes []*ChangeInfo
 	for _, hash := range hashes {
 		// Get commit title and body
-		c := execv.Command("git", "show", "--pretty=format:%s~~%b", "-s", hash)
+		c := execv.Command("git", "show", "--pretty=format:%s~~%b~~%ct", "-s", hash)
 		c.Dir = googleapisDir
 		b, err := c.Output()
 		if err != nil {
@@ -75,18 +89,19 @@ func ParseChangeInfo(googleapisDir string, hashes []string) ([]*ChangeInfo, erro
 		}
 
 		ss := strings.Split(string(b), "~~")
-		if len(ss) != 2 {
+		if len(ss) != 3 {
 			return nil, fmt.Errorf("expected two segments for commit, got %d: %s", len(ss), b)
 		}
-		title, body := strings.TrimSpace(ss[0]), strings.TrimSpace(ss[1])
+		title, body, unixDate := strings.TrimSpace(ss[0]), strings.TrimSpace(ss[1]), strings.TrimSpace(ss[2])
 
 		// Add link so corresponding googleapis commit.
 		body = fmt.Sprintf("%s\nSource-Link: https://github.com/googleapis/googleapis/commit/%s", body, hash)
 
 		changes = append(changes, &ChangeInfo{
-			Title:          title,
-			Body:           body,
-			GoogleapisHash: hash,
+			Title:              title,
+			Body:               body,
+			GoogleapisHash:     hash,
+			GoogleapisHashDate: unixDate,
 		})
 	}
 	return changes, nil
@@ -112,7 +127,7 @@ func CommitsSinceHash(gitDir, hash string, inclusive bool) ([]string, error) {
 		commitRange = fmt.Sprintf("%s..", hash)
 	}
 
-	c := execv.Command("git", "rev-list", commitRange)
+	c := execv.Command("git", "rev-list", "--reverse", commitRange)
 	c.Dir = gitDir
 	b, err := c.Output()
 	if err != nil {

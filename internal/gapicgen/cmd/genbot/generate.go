@@ -21,12 +21,12 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
+	"strings"
 
+	"cloud.google.com/go/internal/gapicgen/execv"
 	"cloud.google.com/go/internal/gapicgen/generator"
 	"cloud.google.com/go/internal/gapicgen/git"
-	"golang.org/x/sync/errgroup"
 )
 
 // generate downloads sources and generates pull requests for go-genproto and
@@ -35,7 +35,7 @@ func generate(ctx context.Context, githubClient *git.GithubClient, forceAll bool
 	log.Println("creating temp dir")
 	tmpDir, err := os.MkdirTemp("", "update-genproto")
 	if err != nil {
-		return err
+	return err
 	}
 	defer os.RemoveAll(tmpDir)
 
@@ -48,17 +48,17 @@ func generate(ctx context.Context, githubClient *git.GithubClient, forceAll bool
 	// Clone repositories.
 	grp, _ := errgroup.WithContext(ctx)
 	grp.Go(func() error {
-		return git.DeepClone("https://github.com/googleapis/googleapis", googleapisDir)
+	return git.DeepClone("https://github.com/googleapis/googleapis", googleapisDir)
 	})
 	grp.Go(func() error {
-		return git.DeepClone("https://github.com/googleapis/go-genproto", genprotoDir)
+	return git.DeepClone("https://github.com/googleapis/go-genproto", genprotoDir)
 	})
 
 	grp.Go(func() error {
-		return git.DeepClone("https://github.com/protocolbuffers/protobuf", protoDir)
+	return git.DeepClone("https://github.com/protocolbuffers/protobuf", protoDir)
 	})
 	if err := grp.Wait(); err != nil {
-		log.Println(err)
+	log.Println(err)
 	}
 
 	// Regen.
@@ -68,25 +68,57 @@ func generate(ctx context.Context, githubClient *git.GithubClient, forceAll bool
 		ProtoDir:      protoDir,
 		ForceAll:      forceAll,
 	}
-	changes, err := generator.Generate(ctx, conf)
+	genprotoPRNum, err := generatePRs(ctx, githubClient, forceAll, conf)
 	if err != nil {
-		return err
-	}
+		if bodyTooLongErr, ok := err.(git.ErrCommitBodyTooLong); ok {
+			log.Printf("Commit body is too long.")
+			// Generate lesser length commit
+			dirs := []string{conf.GoogleapisDir, conf.GenprotoDir, conf.ProtoDir}
+			for _, dir := range dirs {
+				c := execv.Command("git", "rev-list", fmt.Sprintf("--before=%v", bodyTooLongErr.MaxCommitDate), "-1", "HEAD")
+				c.Dir = dir
+				sha, err := c.Output()
+				if err != nil {
+					return err
+				}
 
-	// Create PR
-	genprotoHasChanges, err := git.HasChanges(genprotoDir)
-	if err != nil {
-		return err
-	}
+				c = execv.Command("git", "reset", "--hard", strings.TrimSpace(string(sha)))
+				c.Dir = dir
+				out, err := c.Output()
+				if err != nil {
+					return err
+				}
+			}
 
-	if !genprotoHasChanges {
-		log.Println("no changes detected")
-		return nil
-	}
-	genprotoPRNum, err := githubClient.CreateGenprotoPR(ctx, genprotoDir, false, changes)
-	if err != nil {
+			genprotoPRNum, err = generatePRs(ctx, githubClient, forceAll, conf)
+			if err != nil {
+				return fmt.Errorf("error creating PR for genproto (may need to check logs for more errors): %w", err)
+			}
+			log.Printf("https://github.com/googleapis/go-genproto/pull/%d", genprotoPRNum)
+			return nil
+		}
 		return fmt.Errorf("error creating PR for genproto (may need to check logs for more errors): %w", err)
 	}
 	log.Printf("https://github.com/googleapis/go-genproto/pull/%d", genprotoPRNum)
 	return nil
+}
+
+func generatePRs(ctx context.Context, githubClient *git.GithubClient, forceAll bool, conf *generator.Config) (int, error) {
+	// Regen.
+	changes, err := generator.Generate(ctx, conf)
+	if err != nil {
+		return 0, err
+	}
+
+	// Create PR
+	genprotoHasChanges, err := git.HasChanges(conf.GenprotoDir)
+	if err != nil {
+		return 0, err
+	}
+
+	if !genprotoHasChanges {
+		log.Println("no changes detected")
+		return 0, nil
+	}
+	return githubClient.CreateGenprotoPR(ctx, conf.GenprotoDir, false, changes)
 }
