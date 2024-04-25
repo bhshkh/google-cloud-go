@@ -28,6 +28,9 @@ import (
 	btopt "cloud.google.com/go/bigtable/internal/option"
 	"cloud.google.com/go/internal/trace"
 	gax "github.com/googleapis/gax-go/v2"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/api/option"
 	"google.golang.org/api/option/internaloption"
 	gtransport "google.golang.org/api/transport/grpc"
@@ -55,6 +58,7 @@ type Client struct {
 	client            btpb.BigtableClient
 	project, instance string
 	appProfile        string
+	otConfig          *openTelemetryConfig
 }
 
 // ClientConfig has configurations for the client.
@@ -94,13 +98,29 @@ func NewClientWithConfig(ctx context.Context, project, instance string, config C
 		return nil, fmt.Errorf("dialing: %w", err)
 	}
 
+	// Create a OpenTelemetry configuration
+	otConfig, err := createOpenTelemetryConfig(project, instance)
+	if err != nil {
+		// The error returned here will be due to database name parsing
+		return nil, err
+	}
+	otel.SetMeterProvider(otConfig.meterProvider)
+
 	return &Client{
 		connPool:   connPool,
 		client:     btpb.NewBigtableClient(connPool),
 		project:    project,
 		instance:   instance,
 		appProfile: config.AppProfile,
+		otConfig:   otConfig,
 	}, nil
+}
+
+type openTelemetryConfig struct {
+	meterProvider        metric.MeterProvider
+	attributeMap         []attribute.KeyValue
+	otMetricRegistration metric.Registration
+	readRowsCount        metric.Int64Counter
 }
 
 // Close closes the Client.
@@ -309,7 +329,7 @@ func (t *Table) ReadRows(ctx context.Context, arg RowSet, f func(Row) bool, opts
 // A missing row will return nil for both Row and error.
 func (t *Table) ReadRow(ctx context.Context, row string, opts ...ReadOption) (Row, error) {
 	var r Row
-
+	t.c.otConfig.readRowsCount.Add(ctx, 1)
 	opts = append([]ReadOption{LimitRows(1)}, opts...)
 	err := t.ReadRows(ctx, SingleRow(row), func(rr Row) bool {
 		r = rr
