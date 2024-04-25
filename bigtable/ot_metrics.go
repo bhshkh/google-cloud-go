@@ -49,14 +49,14 @@ func initializeMetricInstruments(config *openTelemetryConfig) error {
 
 	meter := config.meterProvider.Meter(OtInstrumentationScope, metric.WithInstrumentationVersion(internal.Version))
 
-	openSessionCountInstrument, err := meter.Int64Counter(
+	readRowsCount, err := meter.Int64Counter(
 		"api.counter",
-		metric.WithDescription("Number of API calls."),
+		metric.WithDescription("readRowsCount"),
 		metric.WithUnit("{call}"),
 	)
 	if err != nil {
 		return err
 	}
-	config.readRowsCount = openSessionCountInstrument
+	config.readRowsCount = readRowsCount
 	return nil
 }
