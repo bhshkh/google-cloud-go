@@ -255,6 +255,55 @@ type TableConf struct {
 	// set to protected to make the table protected against data loss
 	DeletionProtection    DeletionProtection
 	ChangeStreamRetention ChangeStreamRetention
+
+	AutomatedBackupConfig TableAutomatedBackupConfig
+}
+
+type TableAutomatedBackupConfig interface {
+	isTableAutomatedBackupConfig()
+}
+
+func toAutomatedBackupConfigProto(automatedBackupConfig TableAutomatedBackupConfig) (*btapb.Table_AutomatedBackupPolicy_, error) {
+	if automatedBackupConfig == nil {
+		return nil, nil
+	}
+	switch backupConfig := automatedBackupConfig.(type) {
+	case *TableAutomatedBackupPolicy:
+		return backupConfig.toProto(), nil
+	default:
+		return nil, fmt.Errorf("error: Unknown type of automated backup config")
+	}
+}
+
+func (*TableAutomatedBackupPolicy) isTableAutomatedBackupConfig() {}
+func (bp *TableAutomatedBackupPolicy) toProto() *btapb.Table_AutomatedBackupPolicy_ {
+	if bp == nil {
+		return nil
+	}
+	pbTableAutomatedBackupPolicy := &btapb.Table_AutomatedBackupPolicy{
+		RetentionPeriod: durationpb.New(0),
+		Frequency:       durationpb.New(0),
+	}
+	if bp.RetentionPeriod != nil {
+		pbTableAutomatedBackupPolicy.RetentionPeriod = durationpb.New(optional.ToDuration(bp.RetentionPeriod))
+	}
+	if bp.Frequency != nil {
+		pbTableAutomatedBackupPolicy.Frequency = durationpb.New(optional.ToDuration(bp.Frequency))
+	}
+	return &btapb.Table_AutomatedBackupPolicy_{
+		AutomatedBackupPolicy: pbTableAutomatedBackupPolicy,
+	}
+}
+
+// Defines an automated backup policy for a table
+type TableAutomatedBackupPolicy struct {
+
+	// Required. How long the automated backups should be retained. The only
+	// supported value at this time is 3 days.
+	RetentionPeriod optional.Duration
+	// Required. How frequently automated backups should occur. The only
+	// supported value at this time is 24 hours.
+	Frequency optional.Duration
 }
 
 // CreateTable creates a new table in the instance.
@@ -321,6 +370,15 @@ func (ac *AdminClient) CreateTableFromConf(ctx context.Context, conf *TableConf)
 			tbl.ColumnFamilies[fam] = &btapb.ColumnFamily{GcRule: policy.proto()}
 		}
 	}
+
+	var err error
+	if conf.AutomatedBackupConfig != nil {
+		tbl.AutomatedBackupConfig, err = toAutomatedBackupConfigProto(conf.AutomatedBackupConfig)
+		if err != nil {
+			return err
+		}
+	}
+
 	prefix := ac.instancePrefix()
 	req := &btapb.CreateTableRequest{
 		Parent:        prefix,
@@ -328,7 +386,7 @@ func (ac *AdminClient) CreateTableFromConf(ctx context.Context, conf *TableConf)
 		Table:         &tbl,
 		InitialSplits: reqSplits,
 	}
-	_, err := ac.tClient.CreateTable(ctx, req)
+	_, err = ac.tClient.CreateTable(ctx, req)
 	return err
 }
 
@@ -372,6 +430,12 @@ func (ac *AdminClient) CreateColumnFamilyWithConfig(ctx context.Context, table, 
 	return err
 }
 
+const (
+	deletionProtectionFieldMask    = "deletion_protection"
+	changeStreamRetentionFieldMask = "change_stream_config"
+	automatedBackupPolicyFieldMask = "automated_backup_policy"
+)
+
 // UpdateTableConf contains all of the information necessary to update a table with column families.
 type UpdateTableConf struct {
 	tableID string
@@ -379,25 +443,56 @@ type UpdateTableConf struct {
 	// set to true to make the table protected against data loss
 	deletionProtection    DeletionProtection
 	changeStreamRetention ChangeStreamRetention
+	automatedBackupConfig TableAutomatedBackupConfig
+
+	includeInUpdateMask map[string]bool
 }
 
 // UpdateTableDisableChangeStream updates a table to disable change stream for table ID.
 func (ac *AdminClient) UpdateTableDisableChangeStream(ctx context.Context, tableID string) error {
-	return ac.updateTableWithConf(ctx, &UpdateTableConf{tableID, None, time.Duration(0)})
+	return ac.updateTableWithConf(ctx, &UpdateTableConf{
+		tableID:               tableID,
+		changeStreamRetention: time.Duration(0),
+		includeInUpdateMask: map[string]bool{
+			changeStreamRetentionFieldMask: true,
+		},
+	})
 }
 
 // UpdateTableWithChangeStream updates a table to with the given table ID and change stream config.
 func (ac *AdminClient) UpdateTableWithChangeStream(ctx context.Context, tableID string, changeStreamRetention ChangeStreamRetention) error {
-	return ac.updateTableWithConf(ctx, &UpdateTableConf{tableID, None, changeStreamRetention})
+	return ac.updateTableWithConf(ctx, &UpdateTableConf{
+		tableID:               tableID,
+		changeStreamRetention: changeStreamRetention,
+		includeInUpdateMask: map[string]bool{
+			changeStreamRetentionFieldMask: true,
+		},
+	})
 }
 
 // UpdateTableWithDeletionProtection updates a table with the given table ID and deletion protection parameter.
 func (ac *AdminClient) UpdateTableWithDeletionProtection(ctx context.Context, tableID string, deletionProtection DeletionProtection) error {
-	return ac.updateTableWithConf(ctx, &UpdateTableConf{tableID, deletionProtection, nil})
+	return ac.updateTableWithConf(ctx, &UpdateTableConf{
+		tableID:            tableID,
+		deletionProtection: deletionProtection,
+		includeInUpdateMask: map[string]bool{
+			"deletion_protection": true,
+		},
+	})
+}
+
+// UpdateTableWithAutomatedBackupConfig updates a table to with the given table ID and automated backup config.
+func (ac *AdminClient) UpdateTableWithAutomatedBackupConfig(ctx context.Context, tableID string, automatedBackupConfig TableAutomatedBackupConfig) error {
+	return ac.updateTableWithConf(ctx, &UpdateTableConf{
+		tableID:               tableID,
+		automatedBackupConfig: automatedBackupConfig,
+		includeInUpdateMask: map[string]bool{
+			automatedBackupPolicyFieldMask: true,
+		},
+	})
 }
 
 // updateTableWithConf updates a table in the instance from the given configuration.
-// only deletion protection can be updated at this period.
 // table ID is required.
 func (ac *AdminClient) updateTableWithConf(ctx context.Context, conf *UpdateTableConf) error {
 	if conf.tableID == "" {
@@ -417,14 +512,14 @@ func (ac *AdminClient) updateTableWithConf(ctx context.Context, conf *UpdateTabl
 		UpdateMask: updateMask,
 	}
 
-	if conf.deletionProtection != None {
-		updateMask.Paths = append(updateMask.Paths, "deletion_protection")
+	if _, include := conf.includeInUpdateMask[deletionProtectionFieldMask]; include {
+		updateMask.Paths = append(updateMask.Paths, deletionProtectionFieldMask)
 		req.Table.DeletionProtection = conf.deletionProtection != Unprotected
 	}
 
-	if conf.changeStreamRetention != nil {
+	if _, include := conf.includeInUpdateMask[changeStreamRetentionFieldMask]; include {
 		if conf.changeStreamRetention.(time.Duration) == time.Duration(0) {
-			updateMask.Paths = append(updateMask.Paths, "change_stream_config")
+			updateMask.Paths = append(updateMask.Paths, changeStreamRetentionFieldMask)
 		} else {
 			updateMask.Paths = append(updateMask.Paths, "change_stream_config.retention_period")
 			req.Table.ChangeStreamConfig = &btapb.ChangeStreamConfig{}
@@ -432,6 +527,14 @@ func (ac *AdminClient) updateTableWithConf(ctx context.Context, conf *UpdateTabl
 		}
 	}
 
+	var err error
+	if _, include := conf.includeInUpdateMask[automatedBackupPolicyFieldMask]; include {
+		updateMask.Paths = append(updateMask.Paths, automatedBackupPolicyFieldMask)
+		req.Table.AutomatedBackupConfig, err = toAutomatedBackupConfigProto(conf.automatedBackupConfig)
+		if err != nil {
+			return err
+		}
+	}
 	lro, err := ac.tClient.UpdateTable(ctx, req)
 	if err != nil {
 		return fmt.Errorf("error from update: %w", err)
@@ -481,6 +584,7 @@ type TableInfo struct {
 	// for example when using NAME_ONLY, the response does not contain DeletionProtection and the value should be None
 	DeletionProtection    DeletionProtection
 	ChangeStreamRetention ChangeStreamRetention
+	AutomatedBackupConfig TableAutomatedBackupConfig
 }
 
 // FamilyInfo represents information about a column family.
@@ -538,6 +642,13 @@ func (ac *AdminClient) TableInfo(ctx context.Context, table string) (*TableInfo,
 	}
 	if res.ChangeStreamConfig != nil && res.ChangeStreamConfig.RetentionPeriod != nil {
 		ti.ChangeStreamRetention = res.ChangeStreamConfig.RetentionPeriod.AsDuration()
+	}
+
+	if res.AutomatedBackupConfig != nil {
+		ti.AutomatedBackupConfig = &TableAutomatedBackupPolicy{
+			RetentionPeriod: res.GetAutomatedBackupPolicy().GetRetentionPeriod().AsDuration(),
+			Frequency:       res.GetAutomatedBackupPolicy().GetFrequency().AsDuration(),
+		}
 	}
 
 	return ti, nil
