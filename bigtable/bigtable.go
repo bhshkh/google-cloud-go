@@ -28,7 +28,6 @@ import (
 	btopt "cloud.google.com/go/bigtable/internal/option"
 	"cloud.google.com/go/internal/trace"
 	gax "github.com/googleapis/gax-go/v2"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/api/option"
@@ -65,7 +64,8 @@ type Client struct {
 type ClientConfig struct {
 	// The id of the app profile to associate with all data operations sent from this client.
 	// If unspecified, the default app profile for the instance will be used.
-	AppProfile string
+	AppProfile                 string
+	OpenTelemetryMeterProvider metric.MeterProvider
 }
 
 // NewClient creates a new Client for a given project and instance.
@@ -99,12 +99,10 @@ func NewClientWithConfig(ctx context.Context, project, instance string, config C
 	}
 
 	// Create a OpenTelemetry configuration
-	otConfig, err := createOpenTelemetryConfig(project, instance)
+	otConfig, err := createOpenTelemetryConfig(ctx, config.OpenTelemetryMeterProvider, project, instance)
 	if err != nil {
-		// The error returned here will be due to database name parsing
 		return nil, err
 	}
-	otel.SetMeterProvider(otConfig.meterProvider)
 
 	return &Client{
 		connPool:   connPool,
@@ -117,10 +115,12 @@ func NewClientWithConfig(ctx context.Context, project, instance string, config C
 }
 
 type openTelemetryConfig struct {
-	meterProvider        metric.MeterProvider
-	attributeMap         []attribute.KeyValue
-	otMetricRegistration metric.Registration
-	readRowsCount        metric.Int64Counter
+	project                  string
+	meterProvider            metric.MeterProvider
+	commonAttributes         []attribute.KeyValue
+	otMetricRegistration     metric.Registration
+	metricOperationLatencies metric.Int64Histogram
+	metricAttemptLatencies   metric.Int64Histogram
 }
 
 // Close closes the Client.
@@ -149,19 +149,21 @@ func init() {
 }
 
 // Convert error to grpc status error
-func convertToGrpcStatusErr(err error) error {
-	if err != nil {
-		if errStatus, ok := status.FromError(err); ok {
-			return status.Error(errStatus.Code(), errStatus.Message())
-		}
-
-		ctxStatus := status.FromContextError(err)
-		if ctxStatus.Code() != codes.Unknown {
-			return status.Error(ctxStatus.Code(), ctxStatus.Message())
-		}
+func convertToGrpcStatusErr(err error) (codes.Code, error) {
+	if err == nil {
+		return codes.OK, nil
 	}
 
-	return err
+	if errStatus, ok := status.FromError(err); ok {
+		return errStatus.Code(), status.Error(errStatus.Code(), errStatus.Message())
+	}
+
+	ctxStatus := status.FromContextError(err)
+	if ctxStatus.Code() != codes.Unknown {
+		return ctxStatus.Code(), status.Error(ctxStatus.Code(), ctxStatus.Message())
+	}
+
+	return codes.Unknown, err
 }
 
 func (c *Client) fullTableName(table string) string {
@@ -204,6 +206,11 @@ func (c *Client) Open(table string) *Table {
 	}
 }
 
+func (t *Table) recordOperationLatency(ctx context.Context, methodName, tableName, appProfile string, isStreaming bool) (instrumentAttributes, func() error) {
+	attrs := newInstrumentAttributes(methodName, t.c.fullTableName(t.table), t.c.appProfile, true)
+	return attrs, t.c.otConfig.recordOperationLatency(ctx, &attrs)
+}
+
 // TODO(dsymonds): Read method that returns a sequence of ReadItems.
 
 // ReadRows reads rows from a table. f is called for each row.
@@ -214,10 +221,18 @@ func (c *Client) Open(table string) *Table {
 // By default, the yielded rows will contain all values in all cells.
 // Use RowFilter to limit the cells returned.
 func (t *Table) ReadRows(ctx context.Context, arg RowSet, f func(Row) bool, opts ...ReadOption) (err error) {
+	method := "cloud.google.com/go/bigtable.ReadRows"
 	ctx = mergeOutgoingMetadata(ctx, t.md)
-	ctx = trace.StartSpan(ctx, "cloud.google.com/go/bigtable.ReadRows")
+	ctx = trace.StartSpan(ctx, method)
 	defer func() { trace.EndSpan(ctx, err) }()
 
+	attrs, record := t.recordOperationLatency(ctx, method, t.c.fullTableName(t.table), t.c.appProfile, true)
+	defer record()
+
+	return t.readRows(ctx, arg, f, &attrs, opts...)
+}
+
+func (t *Table) readRows(ctx context.Context, arg RowSet, f func(Row) bool, attrs *instrumentAttributes, opts ...ReadOption) (err error) {
 	var prevRowKey string
 	attrMap := make(map[string]interface{})
 	err = gax.Invoke(ctx, func(ctx context.Context, _ gax.CallSettings) error {
@@ -243,7 +258,7 @@ func (t *Table) ReadRows(ctx context.Context, arg RowSet, f func(Row) bool, opts
 		defer cancel()
 
 		startTime := time.Now()
-		stream, err := t.c.client.ReadRows(ctx, req)
+		stream, err := t.c.client.ReadRows(ctx, req, attrs.grpcCallOptions...)
 		if err != nil {
 			return err
 		}
@@ -322,19 +337,24 @@ func (t *Table) ReadRows(ctx context.Context, arg RowSet, f func(Row) bool, opts
 		return err
 	}, retryOptions...)
 
-	return convertToGrpcStatusErr(err)
+	statusCode, statusErr := convertToGrpcStatusErr(err)
+	*attrs.status = statusCode.String()
+	return statusErr
 }
 
 // ReadRow is a convenience implementation of a single-row reader.
 // A missing row will return nil for both Row and error.
 func (t *Table) ReadRow(ctx context.Context, row string, opts ...ReadOption) (Row, error) {
+	method := "cloud.google.com/go/bigtable.ReadRow"
+	attrs, record := t.recordOperationLatency(ctx, method, t.c.fullTableName(t.table), t.c.appProfile, true)
+	defer record()
+
 	var r Row
-	t.c.otConfig.readRowsCount.Add(ctx, 1)
 	opts = append([]ReadOption{LimitRows(1)}, opts...)
-	err := t.ReadRows(ctx, SingleRow(row), func(rr Row) bool {
+	err := t.readRows(ctx, SingleRow(row), func(rr Row) bool {
 		r = rr
 		return true
-	}, opts...)
+	}, &attrs, opts...)
 	return r, err
 }
 
@@ -834,9 +854,13 @@ const maxMutations = 100000
 // Apply mutates a row atomically. A mutation must contain at least one
 // operation and at most 100000 operations.
 func (t *Table) Apply(ctx context.Context, row string, m *Mutation, opts ...ApplyOption) (err error) {
+	method := "cloud.google.com/go/bigtable/Apply"
 	ctx = mergeOutgoingMetadata(ctx, t.md)
-	ctx = trace.StartSpan(ctx, "cloud.google.com/go/bigtable/Apply")
+	ctx = trace.StartSpan(ctx, method)
 	defer func() { trace.EndSpan(ctx, err) }()
+
+	attrs, record := t.recordOperationLatency(ctx, method, t.c.fullTableName(t.table), t.c.appProfile, true)
+	defer record()
 
 	after := func(res proto.Message) {
 		for _, o := range opts {
@@ -858,13 +882,15 @@ func (t *Table) Apply(ctx context.Context, row string, m *Mutation, opts ...Appl
 		var res *btpb.MutateRowResponse
 		err := gax.Invoke(ctx, func(ctx context.Context, _ gax.CallSettings) error {
 			var err error
-			res, err = t.c.client.MutateRow(ctx, req)
+			res, err = t.c.client.MutateRow(ctx, req, attrs.grpcCallOptions...)
 			return err
 		}, callOptions...)
 		if err == nil {
 			after(res)
 		}
-		return convertToGrpcStatusErr(err)
+		statusCode, statusErr := convertToGrpcStatusErr(err)
+		*attrs.status = statusCode.String()
+		return statusErr
 	}
 
 	req := &btpb.CheckAndMutateRowRequest{
@@ -891,13 +917,15 @@ func (t *Table) Apply(ctx context.Context, row string, m *Mutation, opts ...Appl
 	var cmRes *btpb.CheckAndMutateRowResponse
 	err = gax.Invoke(ctx, func(ctx context.Context, _ gax.CallSettings) error {
 		var err error
-		cmRes, err = t.c.client.CheckAndMutateRow(ctx, req)
+		cmRes, err = t.c.client.CheckAndMutateRow(ctx, req, attrs.grpcCallOptions...)
 		return err
 	}, callOptions...)
 	if err == nil {
 		after(cmRes)
 	}
-	return convertToGrpcStatusErr(err)
+	statusCode, statusErr := convertToGrpcStatusErr(err)
+	*attrs.status = statusCode.String()
+	return statusErr
 }
 
 // An ApplyOption is an optional argument to Apply.
@@ -1025,9 +1053,13 @@ type entryErr struct {
 //
 // Conditional mutations cannot be applied in bulk and providing one will result in an error.
 func (t *Table) ApplyBulk(ctx context.Context, rowKeys []string, muts []*Mutation, opts ...ApplyOption) (errs []error, err error) {
+	method := "cloud.google.com/go/bigtable/Apply"
 	ctx = mergeOutgoingMetadata(ctx, t.md)
-	ctx = trace.StartSpan(ctx, "cloud.google.com/go/bigtable/ApplyBulk")
+	ctx = trace.StartSpan(ctx, method)
 	defer func() { trace.EndSpan(ctx, err) }()
+
+	attrs, record := t.recordOperationLatency(ctx, method, t.c.fullTableName(t.table), t.c.appProfile, true)
+	defer record()
 
 	if len(rowKeys) != len(muts) {
 		return nil, fmt.Errorf("mismatched rowKeys and mutation array lengths: %d, %d", len(rowKeys), len(muts))
@@ -1047,7 +1079,7 @@ func (t *Table) ApplyBulk(ctx context.Context, rowKeys []string, muts []*Mutatio
 		err = gax.Invoke(ctx, func(ctx context.Context, _ gax.CallSettings) error {
 			attrMap["rowCount"] = len(group)
 			trace.TracePrintf(ctx, attrMap, "Row count in ApplyBulk")
-			err := t.doApplyBulk(ctx, group, opts...)
+			err := t.doApplyBulk(ctx, group, &attrs, opts...)
 			if err != nil {
 				// We want to retry the entire request with the current group
 				return err
@@ -1061,7 +1093,9 @@ func (t *Table) ApplyBulk(ctx context.Context, rowKeys []string, muts []*Mutatio
 			return nil
 		}, retryOptions...)
 		if err != nil {
-			return nil, err
+			statusCode, statusErr := convertToGrpcStatusErr(err)
+			*attrs.status = statusCode.String()
+			return nil, statusErr
 		}
 	}
 
@@ -1071,6 +1105,10 @@ func (t *Table) ApplyBulk(ctx context.Context, rowKeys []string, muts []*Mutatio
 	for _, entry := range origEntries {
 		if entry.Err != nil {
 			foundErr = true
+
+			// Record last error as operation status metric
+			statusCode, _ := convertToGrpcStatusErr(err)
+			*attrs.status = statusCode.String()
 		}
 		errs = append(errs, entry.Err)
 	}
@@ -1094,7 +1132,7 @@ func (t *Table) getApplyBulkRetries(entries []*entryErr) []*entryErr {
 }
 
 // doApplyBulk does the work of a single ApplyBulk invocation
-func (t *Table) doApplyBulk(ctx context.Context, entryErrs []*entryErr, opts ...ApplyOption) error {
+func (t *Table) doApplyBulk(ctx context.Context, entryErrs []*entryErr, attrs *instrumentAttributes, opts ...ApplyOption) error {
 	after := func(res proto.Message) {
 		for _, o := range opts {
 			o.after(res)
@@ -1110,7 +1148,7 @@ func (t *Table) doApplyBulk(ctx context.Context, entryErrs []*entryErr, opts ...
 		AppProfileId: t.c.appProfile,
 		Entries:      entries,
 	}
-	stream, err := t.c.client.MutateRows(ctx, req)
+	stream, err := t.c.client.MutateRows(ctx, req, attrs.grpcCallOptions...)
 	if err != nil {
 		return err
 	}
@@ -1251,8 +1289,13 @@ func (m *ReadModifyWrite) Increment(family, column string, delta int64) {
 // SampleRowKeys returns a sample of row keys in the table. The returned row keys will delimit contiguous sections of
 // the table of approximately equal size, which can be used to break up the data for distributed tasks like mapreduces.
 func (t *Table) SampleRowKeys(ctx context.Context) ([]string, error) {
+	method := "cloud.google.com/go/bigtable/SampleRowKeys"
 	ctx = mergeOutgoingMetadata(ctx, t.md)
 	var sampledRowKeys []string
+
+	attrs, record := t.recordOperationLatency(ctx, method, t.c.fullTableName(t.table), t.c.appProfile, true)
+	defer record()
+
 	err := gax.Invoke(ctx, func(ctx context.Context, _ gax.CallSettings) error {
 		sampledRowKeys = nil
 		req := &btpb.SampleRowKeysRequest{
@@ -1262,7 +1305,7 @@ func (t *Table) SampleRowKeys(ctx context.Context) ([]string, error) {
 		ctx, cancel := context.WithCancel(ctx) // for aborting the stream
 		defer cancel()
 
-		stream, err := t.c.client.SampleRowKeys(ctx, req)
+		stream, err := t.c.client.SampleRowKeys(ctx, req, attrs.grpcCallOptions...)
 		if err != nil {
 			return err
 		}
@@ -1284,5 +1327,7 @@ func (t *Table) SampleRowKeys(ctx context.Context) ([]string, error) {
 		}
 		return nil
 	}, retryOptions...)
-	return sampledRowKeys, convertToGrpcStatusErr(err)
+	statusCode, statusErr := convertToGrpcStatusErr(err)
+	*attrs.status = statusCode.String()
+	return sampledRowKeys, statusErr
 }
