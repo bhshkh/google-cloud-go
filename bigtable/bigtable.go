@@ -57,7 +57,7 @@ type Client struct {
 	client            btpb.BigtableClient
 	project, instance string
 	appProfile        string
-	otConfig          *openTelemetryConfig
+	otConfig          *metricsConfig
 }
 
 // ClientConfig has configurations for the client.
@@ -76,6 +76,7 @@ func NewClient(ctx context.Context, project, instance string, opts ...option.Cli
 
 // NewClientWithConfig creates a new client with the given config.
 func NewClientWithConfig(ctx context.Context, project, instance string, config ClientConfig, opts ...option.ClientOption) (*Client, error) {
+	enableBuiltinMetrics()
 	o, err := btopt.DefaultClientOptions(prodAddr, mtlsProdAddr, Scope, clientUserAgent)
 	if err != nil {
 		return nil, err
@@ -99,7 +100,7 @@ func NewClientWithConfig(ctx context.Context, project, instance string, config C
 	}
 
 	// Create a OpenTelemetry configuration
-	otConfig, err := createOpenTelemetryConfig(ctx, config.OpenTelemetryMeterProvider, project, instance)
+	otConfig, err := createMetricsConfig(ctx, config.OpenTelemetryMeterProvider, project, instance)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +115,7 @@ func NewClientWithConfig(ctx context.Context, project, instance string, config C
 	}, nil
 }
 
-type openTelemetryConfig struct {
+type metricsConfig struct {
 	project                  string
 	meterProvider            metric.MeterProvider
 	commonAttributes         []attribute.KeyValue
@@ -206,8 +207,8 @@ func (c *Client) Open(table string) *Table {
 	}
 }
 
-func (t *Table) recordOperationLatency(ctx context.Context, methodName, tableName, appProfile string, isStreaming bool) (instrumentAttributes, func() error) {
-	attrs := newInstrumentAttributes(methodName, t.c.fullTableName(t.table), t.c.appProfile, true)
+func (t *Table) recordOperationLatency(ctx context.Context, methodName string, isStreaming bool) (metricLabelValues, func() error) {
+	attrs := newMetricLabelValues(methodName, t.table, t.c.appProfile, isStreaming)
 	return attrs, t.c.otConfig.recordOperationLatency(ctx, &attrs)
 }
 
@@ -226,13 +227,13 @@ func (t *Table) ReadRows(ctx context.Context, arg RowSet, f func(Row) bool, opts
 	ctx = trace.StartSpan(ctx, method)
 	defer func() { trace.EndSpan(ctx, err) }()
 
-	attrs, record := t.recordOperationLatency(ctx, method, t.c.fullTableName(t.table), t.c.appProfile, true)
+	attrs, record := t.recordOperationLatency(ctx, method, true)
 	defer record()
 
 	return t.readRows(ctx, arg, f, &attrs, opts...)
 }
 
-func (t *Table) readRows(ctx context.Context, arg RowSet, f func(Row) bool, attrs *instrumentAttributes, opts ...ReadOption) (err error) {
+func (t *Table) readRows(ctx context.Context, arg RowSet, f func(Row) bool, attrs *metricLabelValues, opts ...ReadOption) (err error) {
 	var prevRowKey string
 	attrMap := make(map[string]interface{})
 	err = gax.Invoke(ctx, func(ctx context.Context, _ gax.CallSettings) error {
@@ -346,7 +347,7 @@ func (t *Table) readRows(ctx context.Context, arg RowSet, f func(Row) bool, attr
 // A missing row will return nil for both Row and error.
 func (t *Table) ReadRow(ctx context.Context, row string, opts ...ReadOption) (Row, error) {
 	method := "cloud.google.com/go/bigtable.ReadRow"
-	attrs, record := t.recordOperationLatency(ctx, method, t.c.fullTableName(t.table), t.c.appProfile, true)
+	attrs, record := t.recordOperationLatency(ctx, method, true)
 	defer record()
 
 	var r Row
@@ -859,7 +860,7 @@ func (t *Table) Apply(ctx context.Context, row string, m *Mutation, opts ...Appl
 	ctx = trace.StartSpan(ctx, method)
 	defer func() { trace.EndSpan(ctx, err) }()
 
-	attrs, record := t.recordOperationLatency(ctx, method, t.c.fullTableName(t.table), t.c.appProfile, true)
+	attrs, record := t.recordOperationLatency(ctx, method, true)
 	defer record()
 
 	after := func(res proto.Message) {
@@ -1058,7 +1059,7 @@ func (t *Table) ApplyBulk(ctx context.Context, rowKeys []string, muts []*Mutatio
 	ctx = trace.StartSpan(ctx, method)
 	defer func() { trace.EndSpan(ctx, err) }()
 
-	attrs, record := t.recordOperationLatency(ctx, method, t.c.fullTableName(t.table), t.c.appProfile, true)
+	attrs, record := t.recordOperationLatency(ctx, method, true)
 	defer record()
 
 	if len(rowKeys) != len(muts) {
@@ -1132,7 +1133,7 @@ func (t *Table) getApplyBulkRetries(entries []*entryErr) []*entryErr {
 }
 
 // doApplyBulk does the work of a single ApplyBulk invocation
-func (t *Table) doApplyBulk(ctx context.Context, entryErrs []*entryErr, attrs *instrumentAttributes, opts ...ApplyOption) error {
+func (t *Table) doApplyBulk(ctx context.Context, entryErrs []*entryErr, attrs *metricLabelValues, opts ...ApplyOption) error {
 	after := func(res proto.Message) {
 		for _, o := range opts {
 			o.after(res)
@@ -1293,7 +1294,7 @@ func (t *Table) SampleRowKeys(ctx context.Context) ([]string, error) {
 	ctx = mergeOutgoingMetadata(ctx, t.md)
 	var sampledRowKeys []string
 
-	attrs, record := t.recordOperationLatency(ctx, method, t.c.fullTableName(t.table), t.c.appProfile, true)
+	attrs, record := t.recordOperationLatency(ctx, method, true)
 	defer record()
 
 	err := gax.Invoke(ctx, func(ctx context.Context, _ gax.CallSettings) error {

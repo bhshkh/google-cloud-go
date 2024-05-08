@@ -9,14 +9,11 @@ import (
 
 	"cloud.google.com/go/bigtable/internal"
 	"github.com/google/uuid"
-	"go.opentelemetry.io/contrib/detectors/gcp"
-	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -28,80 +25,57 @@ const (
 	metricsPrefix       = "bigtable/"
 	locationMetadataKey = "x-goog-ext-425905942-bin"
 
-	// Metric attribute keys for labels
-	attributeKeyProject            = attribute.Key("project_id")
-	attributeKeyInstance           = attribute.Key("instance")
-	attributeKeyTable              = attribute.Key("table")
-	attributeKeyCluster            = attribute.Key("cluster")
-	attributeKeyAppProfile         = attribute.Key("app_profile")
-	attributeKeyZone               = attribute.Key("zone")
-	attributeKeyMethod             = attribute.Key("method")
-	attributeKeyOperationStatus    = attribute.Key("status")
-	attributeKeyStreamingOperation = attribute.Key("streaming")
-	attributeKeyClientName         = attribute.Key("client_name")
-	attributeKeyClientUID          = attribute.Key("client_uid")
+	// Monitored resource labels
+	monitoredResLabelKeyProject  = "project_id"
+	monitoredResLabelKeyInstance = "instance"
+	monitoredResLabelKeyCluster  = "cluster"
+	monitoredResLabelKeyTable    = "table"
+	monitoredResLabelKeyZone     = "zone"
+
+	// Metric labels
+	metricLabelKeyAppProfile         = "app_profile"
+	metricLabelKeyMethod             = "method"
+	metricLabelKeyOperationStatus    = "status"
+	metricLabelKeyStreamingOperation = "streaming"
+	metricLabelKeyClientName         = "client_name"
+	metricLabelKeyClientUID          = "client_uid"
 
 	// Metric names
 	metricNameOperationLatencies = "operation_latencies"
 	metricNameAttemptLatencies   = "attempt_latencies"
 	metricNameCounter            = "test_counter"
-
-	bigtableResourceType = "bigtable_client_raw"
 )
 
 var (
-	attributeValueClientName = fmt.Sprintf("cloud.google.com/go/bigtable v%v", internal.Version)
+	clientName = fmt.Sprintf("cloud.google.com/go/bigtable v%v", internal.Version)
 
-	// openTelemetryMetricsEnabled is used to track if OpenTelemetry Metrics need to be recorded
-	openTelemetryMetricsEnabled = false
+	// builtinMetricsEnabled is used to track if builtin metrics need to be recorded and exported to Google Cloud Monitoring.
+	// They are enabled by default and currently, cannot be disabled. This has been added only for future compatibility if they are made optional
+	builtinMetricsEnabled = false
 
 	// mutex to avoid data race in reading/writing the above flag
-	otMu = sync.RWMutex{}
+	builtinEnabledMu = sync.RWMutex{}
 )
 
-type instrumentAttributes struct {
-	tableName       string
-	appProfileId    string
-	methodName      string
-	isStreaming     bool
-	status          *string
-	grpcCallOptions []grpc.CallOption
+// isBuiltinMetricsEnabled tells whether builtin metrics is enabled or not.
+func isBuiltinMetricsEnabled() bool {
+	builtinEnabledMu.RLock()
+	defer builtinEnabledMu.RUnlock()
+	return builtinMetricsEnabled
 }
 
-func newInstrumentAttributes(methodName, tableName, appProfile string, isStreaming bool) instrumentAttributes {
-	headerMD := metadata.New(nil)
-	trailerMD := metadata.New(nil)
-	status := ""
-	grpcCallOptions := []grpc.CallOption{grpc.Header(&headerMD), grpc.Trailer(&trailerMD)}
-
-	return instrumentAttributes{
-		tableName:       tableName,
-		appProfileId:    appProfile,
-		methodName:      methodName,
-		isStreaming:     isStreaming,
-		status:          &status,
-		grpcCallOptions: grpcCallOptions,
-	}
-}
-
-// IsOpenTelemetryMetricsEnabled tells whether OpenTelemtery metrics is enabled or not.
-func IsOpenTelemetryMetricsEnabled() bool {
-	otMu.RLock()
-	defer otMu.RUnlock()
-	return openTelemetryMetricsEnabled
-}
-
-// EnableBuiltinMetrics enables OpenTelemetery metrics
-func EnableBuiltinMetrics() {
+// enableBuiltinMetrics enables builtin metrics
+func enableBuiltinMetrics() {
 	setOpenTelemetryMetricsFlag(true)
 }
 
 func setOpenTelemetryMetricsFlag(enable bool) {
-	otMu.Lock()
-	openTelemetryMetricsEnabled = enable
-	otMu.Unlock()
+	builtinEnabledMu.Lock()
+	builtinMetricsEnabled = enable
+	builtinEnabledMu.Unlock()
 }
 
+// Generates unique client ID in the format go-<random UUID>@<>hostname
 func generateClientUID() string {
 	hostname := "localhost"
 	hostname, err := os.Hostname()
@@ -112,62 +86,61 @@ func generateClientUID() string {
 
 }
 
-func createOpenTelemetryConfig(ctx context.Context, mp metric.MeterProvider, project, instance string) (*openTelemetryConfig, error) {
-	config := &openTelemetryConfig{
+func createMetricsConfig(ctx context.Context, mp metric.MeterProvider, project, instance string) (*metricsConfig, error) {
+	config := &metricsConfig{
+		project:          project,
 		commonAttributes: []attribute.KeyValue{},
 	}
 
-	if !IsOpenTelemetryMetricsEnabled() {
+	if !isBuiltinMetricsEnabled() {
 		return config, nil
 	}
-	// Construct attributes for Metrics
+
+	// Construct attributes for metrics
 	attributeMap := []attribute.KeyValue{
-		attributeKeyProject.String(project),
-		attributeKeyInstance.String(instance),
-		attributeKeyClientUID.String(generateClientUID()),
-		attributeKeyClientName.String(attributeValueClientName),
+		attribute.String(monitoredResLabelKeyProject, project),
+		attribute.String(monitoredResLabelKeyInstance, instance),
+		attribute.String(metricLabelKeyClientUID, generateClientUID()),
+		attribute.String(metricLabelKeyClientName, clientName),
 	}
 	config.commonAttributes = append(config.commonAttributes, attributeMap...)
-	config.project = project
+
 	err := setOpenTelemetryMetricProvider(ctx, config, mp)
 	if err != nil {
 		return config, err
 	}
+
 	return config, nil
 }
 
-func setOpenTelemetryMetricProvider(ctx context.Context, config *openTelemetryConfig, mp metric.MeterProvider) error {
+func setOpenTelemetryMetricProvider(ctx context.Context, config *metricsConfig, mp metric.MeterProvider) error {
 	if mp == nil {
 		// Fallback to default meter provider if none provided
-		// defaultExporter, err := newMonitoringMetricExporter(config)
+		defaultExporter, err := newMonitoringMetricExporter(config)
+		if err != nil {
+			return err
+		}
+
+		// TODO: Remove this
+		// defaultExporter, err := stdoutmetric.New()
 		// if err != nil {
 		// 	return err
 		// }
 
-		defaultExporter, err := stdoutmetric.New()
+		res, err := resource.New(ctx)
 		if err != nil {
 			return err
 		}
 
-		res, err := resource.New(
-			ctx,
-			// Use the GCP resource detector to detect information about the GCP platform
-			resource.WithDetectors(gcp.NewDetector()),
-			// Keep the default detectors
-			resource.WithTelemetrySDK(),
-			// Add attributes from environment variables
-			resource.WithFromEnv(),
-			// Add your own custom attributes to identify your application
-			resource.WithAttributes(
-				semconv.ServiceNameKey.String("test-servicename"),
-			),
-		)
-		if err != nil {
-			return err
-		}
+		// TODO: Remove this
+		// mp = sdkmetric.NewMeterProvider(
+		// 	sdkmetric.WithReader(sdkmetric.NewPeriodicReader(defaultExporter.exporter,
+		// 		sdkmetric.WithInterval(3*time.Second)), // TODO: Remove this, use default 60s
+		// 	),
+		// 	sdkmetric.WithResource(res),
+		// )
 		mp = sdkmetric.NewMeterProvider(
-			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(defaultExporter,
-				sdkmetric.WithInterval(3*time.Second))), // TODO: Remove this, use default 60s
+			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(defaultExporter.exporter)),
 			sdkmetric.WithResource(res),
 		)
 	}
@@ -175,8 +148,8 @@ func setOpenTelemetryMetricProvider(ctx context.Context, config *openTelemetryCo
 	return initializeMetricInstruments(config)
 }
 
-func initializeMetricInstruments(config *openTelemetryConfig) error {
-	if !IsOpenTelemetryMetricsEnabled() {
+func initializeMetricInstruments(config *metricsConfig) error {
+	if !isBuiltinMetricsEnabled() {
 		return nil
 	}
 	meter := config.meterProvider.Meter(meterName)
@@ -206,11 +179,36 @@ func initializeMetricInstruments(config *openTelemetryConfig) error {
 	return nil
 }
 
-func (otConfig *openTelemetryConfig) recordOperationLatency(ctx context.Context, attr *instrumentAttributes) func() error {
+type metricLabelValues struct {
+	tableName       string
+	appProfileId    string
+	methodName      string
+	isStreaming     bool
+	status          *string
+	grpcCallOptions []grpc.CallOption // Contains the header and trailer response metadata which is used to extract cluster and zone
+}
+
+func newMetricLabelValues(methodName, tableName, appProfile string, isStreaming bool) metricLabelValues {
+	headerMD := metadata.New(nil)
+	trailerMD := metadata.New(nil)
+	status := ""
+	grpcCallOptions := []grpc.CallOption{grpc.Header(&headerMD), grpc.Trailer(&trailerMD)}
+
+	return metricLabelValues{
+		tableName:       tableName,
+		appProfileId:    appProfile,
+		methodName:      methodName,
+		isStreaming:     isStreaming,
+		status:          &status,
+		grpcCallOptions: grpcCallOptions,
+	}
+}
+
+func (otConfig *metricsConfig) recordOperationLatency(ctx context.Context, attr *metricLabelValues) func() error {
 	startTime := time.Now()
 	return func() error {
 		elapsedTime := time.Since(startTime).Milliseconds()
-		if !IsOpenTelemetryMetricsEnabled() || otConfig == nil || otConfig.metricOperationLatencies == nil {
+		if !isBuiltinMetricsEnabled() || otConfig == nil || otConfig.metricOperationLatencies == nil {
 			return nil
 		}
 
@@ -220,19 +218,22 @@ func (otConfig *openTelemetryConfig) recordOperationLatency(ctx context.Context,
 	}
 }
 
-func createAttributeMap(attr *instrumentAttributes) ([]attribute.KeyValue, error) {
+func createAttributeMap(attr *metricLabelValues) ([]attribute.KeyValue, error) {
 	clusterId, zoneId, err := obtainLocationFromMetadata(attr.grpcCallOptions)
 	if err != nil {
 		return nil, err
 	}
 	attributeMap := []attribute.KeyValue{
-		attributeKeyMethod.String(attr.methodName),
-		attributeKeyTable.String(attr.tableName),
-		attributeKeyAppProfile.String(attr.appProfileId),
-		attributeKeyStreamingOperation.Bool(attr.isStreaming),
-		attributeKeyOperationStatus.String(*attr.status),
-		attributeKeyCluster.String(clusterId),
-		attributeKeyCluster.String(zoneId),
+		attribute.String(metricLabelKeyMethod, attr.methodName),
+		attribute.String(metricLabelKeyAppProfile, attr.appProfileId),
+		attribute.Bool(metricLabelKeyStreamingOperation, attr.isStreaming),
+		attribute.String(metricLabelKeyOperationStatus, *attr.status),
+
+		// Add resource labels to otel metric labels.
+		// These will be used for creating the monitored resource but exporter will not add them to Cloud Monitoring metric labels
+		attribute.String(monitoredResLabelKeyTable, attr.tableName),
+		attribute.String(monitoredResLabelKeyCluster, clusterId),
+		attribute.String(monitoredResLabelKeyZone, zoneId),
 	}
 	return attributeMap, err
 }
