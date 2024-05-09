@@ -40,7 +40,6 @@ import (
 	"math"
 	"math/rand"
 	"net"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -48,6 +47,8 @@ import (
 
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/google/codesearch/regexp"
 
 	longrunning "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/google/btree"
@@ -62,7 +63,6 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
-	"rsc.io/binaryregexp"
 )
 
 const (
@@ -75,7 +75,7 @@ const (
 	maxValidMilliSeconds = math.MaxInt64 - math.MaxInt64%1000
 )
 
-var validLabelTransformer = regexp.MustCompile(`[a-z0-9\-]{1,15}`)
+var validLabelTransformer, _ = regexp.Compile(`[a-z0-9\-]{1,15}`)
 
 // Server is an in-memory Cloud Bigtable fake.
 // It is unauthenticated, and only a rough approximation.
@@ -732,7 +732,7 @@ func filterRow(f *btpb.RowFilter, r *row) (bool, error) {
 		if err != nil {
 			return false, status.Errorf(codes.InvalidArgument, "Error in field 'row_key_regex_filter' : %v", err)
 		}
-		if !rx.MatchString(r.key) {
+		if rx.MatchString(r.key, true, true) == -1 {
 			return false, nil
 		}
 	case *btpb.RowFilter_CellsPerRowLimitFilter:
@@ -826,7 +826,7 @@ func modifyCell(f *btpb.RowFilter, c cell) (cell, error) {
 	case *btpb.RowFilter_StripValueTransformer:
 		return cell{ts: c.ts}, nil
 	case *btpb.RowFilter_ApplyLabelTransformer:
-		if !validLabelTransformer.MatchString(filter.ApplyLabelTransformer) {
+		if validLabelTransformer.MatchString(filter.ApplyLabelTransformer, true, true) > 0 {
 			return cell{}, status.Errorf(
 				codes.InvalidArgument,
 				`apply_label_transformer must match RE2([a-z0-9\-]+), but found %v`,
@@ -865,19 +865,19 @@ func includeCell(f *btpb.RowFilter, fam, col string, cell cell) (bool, error) {
 		if err != nil {
 			return false, status.Errorf(codes.InvalidArgument, "Error in field 'family_name_regex_filter' : %v", err)
 		}
-		return rx.MatchString(fam), nil
+		return rx.MatchString(fam, true, true) > 0, nil
 	case *btpb.RowFilter_ColumnQualifierRegexFilter:
 		rx, err := newRegexp(f.ColumnQualifierRegexFilter)
 		if err != nil {
 			return false, status.Errorf(codes.InvalidArgument, "Error in field 'column_qualifier_regex_filter' : %v", err)
 		}
-		return rx.MatchString(col), nil
+		return rx.MatchString(col, true, true) > 0, nil
 	case *btpb.RowFilter_ValueRegexFilter:
 		rx, err := newRegexp(f.ValueRegexFilter)
 		if err != nil {
 			return false, status.Errorf(codes.InvalidArgument, "Error in field 'value_regex_filter' : %v", err)
 		}
-		return rx.Match(cell.value), nil
+		return rx.Match(cell.value, true, true) > 0, nil
 	case *btpb.RowFilter_ColumnRangeFilter:
 		if fam != f.ColumnRangeFilter.FamilyName {
 			return false, nil
@@ -952,8 +952,8 @@ func escapeUTF(in []byte) []byte {
 	return out
 }
 
-func newRegexp(pat []byte) (*binaryregexp.Regexp, error) {
-	re, err := binaryregexp.Compile("^(?:" + string(escapeUTF(pat)) + ")$") // match entire target
+func newRegexp(pat []byte) (*regexp.Regexp, error) {
+	re, err := regexp.Compile("^(?:" + string(escapeUTF(pat)) + ")$") // match entire target
 	if err != nil {
 		log.Printf("Bad pattern %q: %v", pat, err)
 	}
