@@ -1264,7 +1264,8 @@ func (t *Table) doApplyBulk(ctx context.Context, entryErrs []*entryErr, attrs *m
 	} else {
 		req.AuthorizedViewName = t.c.fullAuthorizedViewName(t.table, t.authorizedView)
 	}
-	stream, err := t.c.client.MutateRows(ctx, req, attrs.grpcCallOptions...)
+
+  stream, err := t.c.client.MutateRows(ctx, req, attrs.grpcCallOptions...)
 	if err != nil {
 		return err
 	}
