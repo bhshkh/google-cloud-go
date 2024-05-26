@@ -28,12 +28,11 @@ import (
 	monitoring "cloud.google.com/go/monitoring/apiv3/v2"
 	"cloud.google.com/go/monitoring/apiv3/v2/monitoringpb"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	otelmetric "go.opentelemetry.io/otel/sdk/metric"
+	otelmetricdata "go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"google.golang.org/genproto/googleapis/api/distribution"
 	googlemetricpb "google.golang.org/genproto/googleapis/api/metric"
 	monitoredrespb "google.golang.org/genproto/googleapis/api/monitoredres"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -66,18 +65,42 @@ func (e errUnexpectedAggregationKind) Error() string {
 	return fmt.Sprintf("the metric kind is unexpected: %v", e.kind)
 }
 
-type monitoringExporter struct {
-	exporter metric.Exporter
+type bigtableMetricsHandler struct {
+	exporter otelmetric.Exporter
 }
 
-// metricExporter is the implementation of OpenTelemetry metric exporter for
+func newBigtableMetricsHandler(ctx context.Context, config *metricsConfigInternal) (*bigtableMetricsHandler, error) {
+	// Use default exporter: bigtableMonitoringExporter
+	bigtableMonitoringExporter, err := newBigtableMonitoringExporter(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &bigtableMetricsHandler{
+		exporter: bigtableMonitoringExporter,
+	}, nil
+}
+
+// bigtableMonitoringExporter is the implementation of OpenTelemetry metric exporter for
 // Google Cloud Monitoring.
+// Default exporter for built-in metrics
 type bigtableMonitoringExporter struct {
-	shutdown         chan struct{}
-	client           *monitoring.MetricClient
-	shutdownOnce     sync.Once
-	projectID        string
-	resourceOnlyKeys []attribute.Key
+	shutdown     chan struct{}
+	client       *monitoring.MetricClient
+	shutdownOnce sync.Once
+	projectID    string
+}
+
+func newBigtableMonitoringExporter(ctx context.Context, config *metricsConfigInternal) (*bigtableMonitoringExporter, error) {
+	client, err := monitoring.NewMetricClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &bigtableMonitoringExporter{
+		client:    client,
+		shutdown:  make(chan struct{}),
+		projectID: config.project,
+	}, nil
 }
 
 // ForceFlush does nothing, the exporter holds no state.
@@ -93,36 +116,8 @@ func (e *bigtableMonitoringExporter) Shutdown(ctx context.Context) error {
 	return err
 }
 
-func newMonitoringExporter(ctx context.Context, config *metricsConfig) (*monitoringExporter, error) {
-	bigtableMonitoringExporter, err := newBigtableMonitoringExporter(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-
-	return &monitoringExporter{
-		exporter: bigtableMonitoringExporter,
-	}, nil
-}
-
-func newBigtableMonitoringExporter(ctx context.Context, config *metricsConfig) (*bigtableMonitoringExporter, error) {
-	client, err := monitoring.NewMetricClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	resourceOnlyKeys := []attribute.Key{}
-	for k := range monitoredResLabelsSet {
-		resourceOnlyKeys = append(resourceOnlyKeys, attribute.Key(k))
-	}
-	return &bigtableMonitoringExporter{
-		client:           client,
-		shutdown:         make(chan struct{}),
-		projectID:        config.project,
-		resourceOnlyKeys: resourceOnlyKeys,
-	}, nil
-}
-
 // Export exports OpenTelemetry Metrics to Google Cloud Monitoring.
-func (me *bigtableMonitoringExporter) Export(ctx context.Context, rm *metricdata.ResourceMetrics) error {
+func (me *bigtableMonitoringExporter) Export(ctx context.Context, rm *otelmetricdata.ResourceMetrics) error {
 	select {
 	case <-me.shutdown:
 		return errShutdown
@@ -133,18 +128,18 @@ func (me *bigtableMonitoringExporter) Export(ctx context.Context, rm *metricdata
 }
 
 // Temporality returns the Temporality to use for an instrument kind.
-func (me *bigtableMonitoringExporter) Temporality(ik metric.InstrumentKind) metricdata.Temporality {
-	return metric.DefaultTemporalitySelector(ik)
+func (me *bigtableMonitoringExporter) Temporality(ik otelmetric.InstrumentKind) otelmetricdata.Temporality {
+	return otelmetric.DefaultTemporalitySelector(ik)
 }
 
 // Aggregation returns the Aggregation to use for an instrument kind.
-func (me *bigtableMonitoringExporter) Aggregation(ik metric.InstrumentKind) metric.Aggregation {
-	return metric.DefaultAggregationSelector(ik)
+func (me *bigtableMonitoringExporter) Aggregation(ik otelmetric.InstrumentKind) otelmetric.Aggregation {
+	return otelmetric.DefaultAggregationSelector(ik)
 }
 
 // exportTimeSeries create TimeSeries from the records in cps.
 // res should be the common resource among all TimeSeries, such as instance id, application name and so on.
-func (me *bigtableMonitoringExporter) exportTimeSeries(ctx context.Context, rm *metricdata.ResourceMetrics) error {
+func (me *bigtableMonitoringExporter) exportTimeSeries(ctx context.Context, rm *otelmetricdata.ResourceMetrics) error {
 	tss, err := me.recordsToTspbs(rm)
 	if len(tss) == 0 {
 		return err
@@ -163,20 +158,14 @@ func (me *bigtableMonitoringExporter) exportTimeSeries(ctx context.Context, rm *
 			Name:       name,
 			TimeSeries: tss[i:j],
 		}
-		fmt.Printf("writeTimeseriesRequest: %+v\n", protojson.MarshalOptions{
-			Multiline:       true,
-			EmitUnpopulated: true,
-		}.Format(req))
-		errs = append(errs, me.client.CreateTimeSeries(ctx, req))
-
+		errs = append(errs, me.client.CreateServiceTimeSeries(ctx, req))
 	}
 
 	return errors.Join(errs...)
 }
 
 // recordToMpb converts data from records to Metric and Monitored resource proto type for Cloud Monitoring.
-func (me *bigtableMonitoringExporter) recordToMpb(metrics metricdata.Metrics, attributes attribute.Set) (*googlemetricpb.Metric, *monitoredrespb.MonitoredResource) {
-
+func (me *bigtableMonitoringExporter) recordToMpb(metrics otelmetricdata.Metrics, attributes attribute.Set) (*googlemetricpb.Metric, *monitoredrespb.MonitoredResource) {
 	mr := &monitoredrespb.MonitoredResource{
 		Type:   bigtableResourceType,
 		Labels: map[string]string{},
@@ -207,17 +196,35 @@ func (me *bigtableMonitoringExporter) recordToMpb(metrics metricdata.Metrics, at
 
 // recordToTspb converts record to TimeSeries proto type with common resource.
 // ref. https://cloud.google.com/monitoring/api/ref_v3/rest/v3/TimeSeries
-func (me *bigtableMonitoringExporter) recordToTspb(m metricdata.Metrics) ([]*monitoringpb.TimeSeries, error) {
+func (me *bigtableMonitoringExporter) recordToTspb(m otelmetricdata.Metrics) ([]*monitoringpb.TimeSeries, error) {
 	var tss []*monitoringpb.TimeSeries
 	var errs []error
 	if m.Data == nil {
 		return nil, nil
 	}
 	switch a := m.Data.(type) {
-	case metricdata.Histogram[int64]:
+	case otelmetricdata.Histogram[float64]:
 		for _, point := range a.DataPoints {
 			metric, mr := me.recordToMpb(m, point.Attributes)
 			ts, err := histogramToTimeSeries(point, m, mr)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			ts.Metric = metric
+			tss = append(tss, ts)
+		}
+	case otelmetricdata.Sum[int64]:
+		for _, point := range a.DataPoints {
+			metric, mr := me.recordToMpb(m, point.Attributes)
+			var ts *monitoringpb.TimeSeries
+			var err error
+			if a.IsMonotonic {
+				ts, err = sumToTimeSeries[int64](point, m, mr)
+			} else {
+				// Send non-monotonic sums as gauges
+				ts, err = gaugeToTimeSeries[int64](point, m, mr)
+			}
 			if err != nil {
 				errs = append(errs, err)
 				continue
@@ -231,8 +238,7 @@ func (me *bigtableMonitoringExporter) recordToTspb(m metricdata.Metrics) ([]*mon
 	return tss, errors.Join(errs...)
 }
 
-func (me *bigtableMonitoringExporter) recordsToTspbs(rm *metricdata.ResourceMetrics) ([]*monitoringpb.TimeSeries, error) {
-
+func (me *bigtableMonitoringExporter) recordsToTspbs(rm *otelmetricdata.ResourceMetrics) ([]*monitoringpb.TimeSeries, error) {
 	var (
 		tss  []*monitoringpb.TimeSeries
 		errs []error
@@ -248,7 +254,45 @@ func (me *bigtableMonitoringExporter) recordsToTspbs(rm *metricdata.ResourceMetr
 	return tss, errors.Join(errs...)
 }
 
-func histogramToTimeSeries[N int64 | float64](point metricdata.HistogramDataPoint[N], metrics metricdata.Metrics, mr *monitoredrespb.MonitoredResource) (*monitoringpb.TimeSeries, error) {
+func gaugeToTimeSeries[N int64 | float64](point otelmetricdata.DataPoint[N], metrics otelmetricdata.Metrics, mr *monitoredrespb.MonitoredResource) (*monitoringpb.TimeSeries, error) {
+	value, valueType := numberDataPointToValue(point)
+	timestamp := timestamppb.New(point.Time)
+	if err := timestamp.CheckValid(); err != nil {
+		return nil, err
+	}
+	return &monitoringpb.TimeSeries{
+		Resource:   mr,
+		Unit:       string(metrics.Unit),
+		MetricKind: googlemetricpb.MetricDescriptor_GAUGE,
+		ValueType:  valueType,
+		Points: []*monitoringpb.Point{{
+			Interval: &monitoringpb.TimeInterval{
+				EndTime: timestamp,
+			},
+			Value: value,
+		}},
+	}, nil
+}
+
+func sumToTimeSeries[N int64 | float64](point otelmetricdata.DataPoint[N], metrics otelmetricdata.Metrics, mr *monitoredrespb.MonitoredResource) (*monitoringpb.TimeSeries, error) {
+	interval, err := toNonemptyTimeIntervalpb(point.StartTime, point.Time)
+	if err != nil {
+		return nil, err
+	}
+	value, valueType := numberDataPointToValue[N](point)
+	return &monitoringpb.TimeSeries{
+		Resource:   mr,
+		Unit:       string(metrics.Unit),
+		MetricKind: googlemetricpb.MetricDescriptor_CUMULATIVE,
+		ValueType:  valueType,
+		Points: []*monitoringpb.Point{{
+			Interval: interval,
+			Value:    value,
+		}},
+	}, nil
+}
+
+func histogramToTimeSeries[N int64 | float64](point otelmetricdata.HistogramDataPoint[N], metrics otelmetricdata.Metrics, mr *monitoredrespb.MonitoredResource) (*monitoringpb.TimeSeries, error) {
 	interval, err := toNonemptyTimeIntervalpb(point.StartTime, point.Time)
 	if err != nil {
 		return nil, err
@@ -293,7 +337,7 @@ func toNonemptyTimeIntervalpb(start, end time.Time) (*monitoringpb.TimeInterval,
 	}, nil
 }
 
-func histToDistribution[N int64 | float64](hist metricdata.HistogramDataPoint[N]) *distribution.Distribution {
+func histToDistribution[N int64 | float64](hist otelmetricdata.HistogramDataPoint[N]) *distribution.Distribution {
 	counts := make([]int64, len(hist.BucketCounts))
 	for i, v := range hist.BucketCounts {
 		counts[i] = int64(v)
@@ -314,4 +358,23 @@ func histToDistribution[N int64 | float64](hist metricdata.HistogramDataPoint[N]
 			},
 		},
 	}
+}
+
+func numberDataPointToValue[N int64 | float64](
+	point otelmetricdata.DataPoint[N],
+) (*monitoringpb.TypedValue, googlemetricpb.MetricDescriptor_ValueType) {
+	switch v := any(point.Value).(type) {
+	case int64:
+		return &monitoringpb.TypedValue{Value: &monitoringpb.TypedValue_Int64Value{
+				Int64Value: v,
+			}},
+			googlemetricpb.MetricDescriptor_INT64
+	case float64:
+		return &monitoringpb.TypedValue{Value: &monitoringpb.TypedValue_DoubleValue{
+				DoubleValue: v,
+			}},
+			googlemetricpb.MetricDescriptor_DOUBLE
+	}
+	// It is impossible to reach this statement
+	return nil, googlemetricpb.MetricDescriptor_INT64
 }
