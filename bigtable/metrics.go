@@ -30,7 +30,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/sdk/resource"
 	btpb "google.golang.org/genproto/googleapis/bigtable/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -70,6 +70,13 @@ const (
 	metricNameServerLatencies    = "server_latencies"
 )
 
+type metricInfo struct {
+	desc                 string
+	metricType           sdkmetric.InstrumentKind
+	unit                 string
+	additionalAttributes []string
+}
+
 var (
 	clientName = fmt.Sprintf("cloud.google.com/go/bigtable v%v", internal.Version)
 
@@ -90,7 +97,7 @@ var (
 	builtinMetrics = map[string]metricInfo{
 		metricNameOperationLatencies: {
 			desc:       "Total time until final operation success or failure, including retries and backoff.",
-			metricType: metricdata.Histogram[float64]{},
+			metricType: sdkmetric.InstrumentKindHistogram,
 			unit:       "ns",
 			additionalAttributes: []string{
 				metricLabelKeyOperationStatus,
@@ -99,7 +106,7 @@ var (
 		},
 		metricNameAttemptLatencies: {
 			desc:       "Client observed latency per RPC attempt.",
-			metricType: metricdata.Histogram[float64]{},
+			metricType: sdkmetric.InstrumentKindHistogram,
 			unit:       "ns",
 			additionalAttributes: []string{
 				metricLabelKeyOperationStatus,
@@ -108,7 +115,7 @@ var (
 		},
 		metricNameServerLatencies: {
 			desc:       "The latency measured from the moment that the RPC entered the Google data center until the RPC was completed.",
-			metricType: metricdata.Histogram[float64]{},
+			metricType: sdkmetric.InstrumentKindHistogram,
 			unit:       "ns",
 			additionalAttributes: []string{
 				metricLabelKeyOperationStatus,
@@ -117,20 +124,13 @@ var (
 		},
 		metricNameRetryCount: {
 			desc:       "The number of additional RPCs sent after the initial attempt.",
-			metricType: metricdata.Sum[int64]{},
+			metricType: sdkmetric.InstrumentKindCounter,
 			additionalAttributes: []string{
 				metricLabelKeyOperationStatus,
 			},
 		},
 	}
 )
-
-type metricInfo struct {
-	desc                 string
-	metricType           metricdata.Aggregation
-	unit                 string
-	additionalAttributes []string
-}
 
 type builtInMetricInstruments struct {
 	distributions map[string]metric.Float64Histogram // Key is metric name e.g. operation_latencies
@@ -192,15 +192,49 @@ func newMetricsConfigInternal(ctx context.Context, project, instance string, use
 		return internalMetricsConfig, err
 	}
 
-	// Create default meter provider
-	defaultMp := sdkmetric.NewMeterProvider(
+	res, err := resource.New(
+		ctx,
+		resource.WithAttributes(
+			attribute.String("gcp.resource_type", "bigtable_client_raw"),
+		),
+	)
+	if err != nil {
+		return internalMetricsConfig, err
+	}
+
+	// Do not add monitored resource attributes to metric attributes in GCM exporter
+	monitoredResKeysFilter := attribute.NewDenyKeysFilter(monitoredResLabelKeyProject,
+		monitoredResLabelKeyInstance,
+		monitoredResLabelKeyTable,
+		monitoredResLabelKeyCluster,
+		monitoredResLabelKeyZone,
+	)
+
+	mpOpts := []sdkmetric.Option{
 		sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
 				metricsHandler.exporter,
 				sdkmetric.WithInterval(samplePeriod),
 			),
 		),
-	)
+		sdkmetric.WithResource(res),
+	}
+	for metricName, metricDetails := range builtinMetrics {
+		instrument := sdkmetric.Instrument{
+			Name:        metricName,
+			Description: metricDetails.desc,
+			Kind:        metricDetails.metricType,
+			Unit:        metricDetails.unit,
+		}
+		view := sdkmetric.NewView(
+			instrument,
+			sdkmetric.Stream{AttributeFilter: monitoredResKeysFilter},
+		)
+		_ = append(mpOpts, sdkmetric.WithView(view))
+	}
+
+	// Create default meter provider
+	defaultMp := sdkmetric.NewMeterProvider(mpOpts...)
 
 	userProvidedMeterProviders := []*sdkmetric.MeterProvider{}
 	if userProvidedConfig != nil {
@@ -223,7 +257,7 @@ func newMetricsConfigInternal(ctx context.Context, project, instance string, use
 
 		// Create instruments
 		for metricName, metricDetails := range builtinMetrics {
-			if _, ok := metricDetails.metricType.(metricdata.Histogram[float64]); ok {
+			if metricDetails.metricType == sdkmetric.InstrumentKindHistogram {
 				builtInMetricInstruments.distributions[metricName], err = meter.Float64Histogram(
 					metricName,
 					metric.WithDescription(metricDetails.desc),
@@ -232,7 +266,7 @@ func newMetricsConfigInternal(ctx context.Context, project, instance string, use
 				if err != nil {
 					return internalMetricsConfig, err
 				}
-			} else if _, ok := metricDetails.metricType.(metricdata.Sum[int64]); ok {
+			} else if metricDetails.metricType == sdkmetric.InstrumentKindCounter {
 				builtInMetricInstruments.counters[metricName], err = meter.Int64Counter(
 					metricName,
 					metric.WithDescription(metricDetails.desc),

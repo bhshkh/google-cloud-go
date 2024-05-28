@@ -18,22 +18,14 @@ package bigtable
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"math"
-	"reflect"
-	"sync"
-	"time"
+	"log"
 
-	monitoring "cloud.google.com/go/monitoring/apiv3/v2"
-	"cloud.google.com/go/monitoring/apiv3/v2/monitoringpb"
+	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
+
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/sdk/metric"
 	otelmetricdata "go.opentelemetry.io/otel/sdk/metric/metricdata"
-	"google.golang.org/genproto/googleapis/api/distribution"
-	googlemetricpb "google.golang.org/genproto/googleapis/api/metric"
-	monitoredrespb "google.golang.org/genproto/googleapis/api/monitoredres"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -70,311 +62,23 @@ type bigtableMetricsHandler struct {
 }
 
 func newBigtableMetricsHandler(ctx context.Context, config *metricsConfigInternal) (*bigtableMetricsHandler, error) {
-	// Use default exporter: bigtableMonitoringExporter
-	bigtableMonitoringExporter, err := newBigtableMonitoringExporter(ctx, config)
+	osExporter, err := mexporter.New(
+		mexporter.WithProjectID(config.project),
+		mexporter.WithCreateServiceTimeSeries(),
+		mexporter.WithMetricDescriptorTypeFormatter(func(desc otelmetricdata.Metrics) string {
+			return fmt.Sprintf("%s%s", meterName, desc.Name)
+		}),
+		mexporter.WithDisableCreateMetricDescriptors(),
+		mexporter.WithMonitoredResourceDescription(mexporter.MonitoredResourceDescription{
+			Type: "bigtable_client_raw",
+		}),
+		mexporter.WithMonitoredResourceAttributes(attribute.NewAllowKeysFilter("project_id", "instance", "table", "cluster", "zone")),
+	)
 	if err != nil {
-		return nil, err
+		log.Fatalf("Failed to create exporter: %v", err)
 	}
 
 	return &bigtableMetricsHandler{
-		exporter: bigtableMonitoringExporter,
+		exporter: osExporter,
 	}, nil
-}
-
-// bigtableMonitoringExporter is the implementation of OpenTelemetry metric exporter for
-// Google Cloud Monitoring.
-// Default exporter for built-in metrics
-type bigtableMonitoringExporter struct {
-	shutdown     chan struct{}
-	client       *monitoring.MetricClient
-	shutdownOnce sync.Once
-	projectID    string
-}
-
-func newBigtableMonitoringExporter(ctx context.Context, config *metricsConfigInternal) (*bigtableMonitoringExporter, error) {
-	client, err := monitoring.NewMetricClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &bigtableMonitoringExporter{
-		client:    client,
-		shutdown:  make(chan struct{}),
-		projectID: config.project,
-	}, nil
-}
-
-// ForceFlush does nothing, the exporter holds no state.
-func (e *bigtableMonitoringExporter) ForceFlush(ctx context.Context) error { return ctx.Err() }
-
-// Shutdown shuts down the client connections.
-func (e *bigtableMonitoringExporter) Shutdown(ctx context.Context) error {
-	err := errShutdown
-	e.shutdownOnce.Do(func() {
-		close(e.shutdown)
-		err = errors.Join(ctx.Err(), e.client.Close())
-	})
-	return err
-}
-
-// Export exports OpenTelemetry Metrics to Google Cloud Monitoring.
-func (me *bigtableMonitoringExporter) Export(ctx context.Context, rm *otelmetricdata.ResourceMetrics) error {
-	select {
-	case <-me.shutdown:
-		return errShutdown
-	default:
-	}
-
-	return me.exportTimeSeries(ctx, rm)
-}
-
-// Temporality returns the Temporality to use for an instrument kind.
-func (me *bigtableMonitoringExporter) Temporality(ik otelmetric.InstrumentKind) otelmetricdata.Temporality {
-	return otelmetric.DefaultTemporalitySelector(ik)
-}
-
-// Aggregation returns the Aggregation to use for an instrument kind.
-func (me *bigtableMonitoringExporter) Aggregation(ik otelmetric.InstrumentKind) otelmetric.Aggregation {
-	return otelmetric.DefaultAggregationSelector(ik)
-}
-
-// exportTimeSeries create TimeSeries from the records in cps.
-// res should be the common resource among all TimeSeries, such as instance id, application name and so on.
-func (me *bigtableMonitoringExporter) exportTimeSeries(ctx context.Context, rm *otelmetricdata.ResourceMetrics) error {
-	tss, err := me.recordsToTspbs(rm)
-	if len(tss) == 0 {
-		return err
-	}
-
-	name := fmt.Sprintf("projects/%s", me.projectID)
-
-	errs := []error{err}
-	for i := 0; i < len(tss); i += sendBatchSize {
-		j := i + sendBatchSize
-		if j >= len(tss) {
-			j = len(tss)
-		}
-
-		req := &monitoringpb.CreateTimeSeriesRequest{
-			Name:       name,
-			TimeSeries: tss[i:j],
-		}
-		errs = append(errs, me.client.CreateServiceTimeSeries(ctx, req))
-	}
-
-	return errors.Join(errs...)
-}
-
-// recordToMpb converts data from records to Metric and Monitored resource proto type for Cloud Monitoring.
-func (me *bigtableMonitoringExporter) recordToMpb(metrics otelmetricdata.Metrics, attributes attribute.Set) (*googlemetricpb.Metric, *monitoredrespb.MonitoredResource) {
-	mr := &monitoredrespb.MonitoredResource{
-		Type:   bigtableResourceType,
-		Labels: map[string]string{},
-	}
-	labels := make(map[string]string)
-	addAttributes := func(attr *attribute.Set) {
-		iter := attr.Iter()
-		for iter.Next() {
-			kv := iter.Attribute()
-			labelKey := string(kv.Key)
-
-			if _, isResLabel := monitoredResLabelsSet[labelKey]; isResLabel {
-				// Add labels to monitored resource
-				mr.Labels[labelKey] = kv.Value.Emit()
-			} else {
-				// Add labels to metric
-				labels[labelKey] = kv.Value.Emit()
-
-			}
-		}
-	}
-	addAttributes(&attributes)
-	return &googlemetricpb.Metric{
-		Type:   fmt.Sprintf("%v%s", meterName, metrics.Name),
-		Labels: labels,
-	}, mr
-}
-
-// recordToTspb converts record to TimeSeries proto type with common resource.
-// ref. https://cloud.google.com/monitoring/api/ref_v3/rest/v3/TimeSeries
-func (me *bigtableMonitoringExporter) recordToTspb(m otelmetricdata.Metrics) ([]*monitoringpb.TimeSeries, error) {
-	var tss []*monitoringpb.TimeSeries
-	var errs []error
-	if m.Data == nil {
-		return nil, nil
-	}
-	switch a := m.Data.(type) {
-	case otelmetricdata.Histogram[float64]:
-		for _, point := range a.DataPoints {
-			metric, mr := me.recordToMpb(m, point.Attributes)
-			ts, err := histogramToTimeSeries(point, m, mr)
-			if err != nil {
-				errs = append(errs, err)
-				continue
-			}
-			ts.Metric = metric
-			tss = append(tss, ts)
-		}
-	case otelmetricdata.Sum[int64]:
-		for _, point := range a.DataPoints {
-			metric, mr := me.recordToMpb(m, point.Attributes)
-			var ts *monitoringpb.TimeSeries
-			var err error
-			if a.IsMonotonic {
-				ts, err = sumToTimeSeries[int64](point, m, mr)
-			} else {
-				// Send non-monotonic sums as gauges
-				ts, err = gaugeToTimeSeries[int64](point, m, mr)
-			}
-			if err != nil {
-				errs = append(errs, err)
-				continue
-			}
-			ts.Metric = metric
-			tss = append(tss, ts)
-		}
-	default:
-		errs = append(errs, errUnexpectedAggregationKind{kind: reflect.TypeOf(m.Data).String()})
-	}
-	return tss, errors.Join(errs...)
-}
-
-func (me *bigtableMonitoringExporter) recordsToTspbs(rm *otelmetricdata.ResourceMetrics) ([]*monitoringpb.TimeSeries, error) {
-	var (
-		tss  []*monitoringpb.TimeSeries
-		errs []error
-	)
-	for _, scope := range rm.ScopeMetrics {
-		for _, metrics := range scope.Metrics {
-			ts, err := me.recordToTspb(metrics)
-			errs = append(errs, err)
-			tss = append(tss, ts...)
-		}
-	}
-
-	return tss, errors.Join(errs...)
-}
-
-func gaugeToTimeSeries[N int64 | float64](point otelmetricdata.DataPoint[N], metrics otelmetricdata.Metrics, mr *monitoredrespb.MonitoredResource) (*monitoringpb.TimeSeries, error) {
-	value, valueType := numberDataPointToValue(point)
-	timestamp := timestamppb.New(point.Time)
-	if err := timestamp.CheckValid(); err != nil {
-		return nil, err
-	}
-	return &monitoringpb.TimeSeries{
-		Resource:   mr,
-		Unit:       string(metrics.Unit),
-		MetricKind: googlemetricpb.MetricDescriptor_GAUGE,
-		ValueType:  valueType,
-		Points: []*monitoringpb.Point{{
-			Interval: &monitoringpb.TimeInterval{
-				EndTime: timestamp,
-			},
-			Value: value,
-		}},
-	}, nil
-}
-
-func sumToTimeSeries[N int64 | float64](point otelmetricdata.DataPoint[N], metrics otelmetricdata.Metrics, mr *monitoredrespb.MonitoredResource) (*monitoringpb.TimeSeries, error) {
-	interval, err := toNonemptyTimeIntervalpb(point.StartTime, point.Time)
-	if err != nil {
-		return nil, err
-	}
-	value, valueType := numberDataPointToValue[N](point)
-	return &monitoringpb.TimeSeries{
-		Resource:   mr,
-		Unit:       string(metrics.Unit),
-		MetricKind: googlemetricpb.MetricDescriptor_CUMULATIVE,
-		ValueType:  valueType,
-		Points: []*monitoringpb.Point{{
-			Interval: interval,
-			Value:    value,
-		}},
-	}, nil
-}
-
-func histogramToTimeSeries[N int64 | float64](point otelmetricdata.HistogramDataPoint[N], metrics otelmetricdata.Metrics, mr *monitoredrespb.MonitoredResource) (*monitoringpb.TimeSeries, error) {
-	interval, err := toNonemptyTimeIntervalpb(point.StartTime, point.Time)
-	if err != nil {
-		return nil, err
-	}
-	distributionValue := histToDistribution(point)
-	return &monitoringpb.TimeSeries{
-		Resource:   mr,
-		Unit:       string(metrics.Unit),
-		MetricKind: googlemetricpb.MetricDescriptor_CUMULATIVE,
-		ValueType:  googlemetricpb.MetricDescriptor_DISTRIBUTION,
-		Points: []*monitoringpb.Point{{
-			Interval: interval,
-			Value: &monitoringpb.TypedValue{
-				Value: &monitoringpb.TypedValue_DistributionValue{
-					DistributionValue: distributionValue,
-				},
-			},
-		}},
-	}, nil
-}
-
-func toNonemptyTimeIntervalpb(start, end time.Time) (*monitoringpb.TimeInterval, error) {
-	// The end time of a new interval must be at least a millisecond after the end time of the
-	// previous interval, for all non-gauge types.
-	// https://cloud.google.com/monitoring/api/ref_v3/rpc/google.monitoring.v3#timeinterval
-	if end.Sub(start).Milliseconds() <= 1 {
-		end = start.Add(time.Millisecond)
-	}
-	startpb := timestamppb.New(start)
-	endpb := timestamppb.New(end)
-	err := errors.Join(
-		startpb.CheckValid(),
-		endpb.CheckValid(),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &monitoringpb.TimeInterval{
-		StartTime: startpb,
-		EndTime:   endpb,
-	}, nil
-}
-
-func histToDistribution[N int64 | float64](hist otelmetricdata.HistogramDataPoint[N]) *distribution.Distribution {
-	counts := make([]int64, len(hist.BucketCounts))
-	for i, v := range hist.BucketCounts {
-		counts[i] = int64(v)
-	}
-	var mean float64
-	if !math.IsNaN(float64(hist.Sum)) && hist.Count > 0 { // Avoid divide-by-zero
-		mean = float64(hist.Sum) / float64(hist.Count)
-	}
-	return &distribution.Distribution{
-		Count:        int64(hist.Count),
-		Mean:         mean,
-		BucketCounts: counts,
-		BucketOptions: &distribution.Distribution_BucketOptions{
-			Options: &distribution.Distribution_BucketOptions_ExplicitBuckets{
-				ExplicitBuckets: &distribution.Distribution_BucketOptions_Explicit{
-					Bounds: hist.Bounds,
-				},
-			},
-		},
-	}
-}
-
-func numberDataPointToValue[N int64 | float64](
-	point otelmetricdata.DataPoint[N],
-) (*monitoringpb.TypedValue, googlemetricpb.MetricDescriptor_ValueType) {
-	switch v := any(point.Value).(type) {
-	case int64:
-		return &monitoringpb.TypedValue{Value: &monitoringpb.TypedValue_Int64Value{
-				Int64Value: v,
-			}},
-			googlemetricpb.MetricDescriptor_INT64
-	case float64:
-		return &monitoringpb.TypedValue{Value: &monitoringpb.TypedValue_DoubleValue{
-				DoubleValue: v,
-			}},
-			googlemetricpb.MetricDescriptor_DOUBLE
-	}
-	// It is impossible to reach this statement
-	return nil, googlemetricpb.MetricDescriptor_INT64
 }
