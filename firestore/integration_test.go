@@ -72,6 +72,7 @@ const (
 	envProjID     = "GCLOUD_TESTS_GOLANG_FIRESTORE_PROJECT_ID"
 	envPrivateKey = "GCLOUD_TESTS_GOLANG_FIRESTORE_KEY"
 	envDatabases  = "GCLOUD_TESTS_GOLANG_FIRESTORE_DATABASES"
+	envEmulator   = "FIRESTORE_EMULATOR_HOST"
 )
 
 var (
@@ -82,6 +83,7 @@ var (
 	wantDBPath       string
 	testParams       map[string]interface{}
 	seededFirstIndex bool
+	useEmulator      bool
 )
 
 func initIntegrationTest() {
@@ -90,6 +92,9 @@ func initIntegrationTest() {
 	flag.Parse() // needed for testing.Short()
 	if testing.Short() {
 		return
+	}
+	if addr := os.Getenv(envEmulator); addr != "" {
+		useEmulator = true
 	}
 	ctx := context.Background()
 	testProjectID := os.Getenv(envProjID)
@@ -1866,6 +1871,9 @@ func TestIntegration_FieldTransforms_Set(t *testing.T) {
 type imap map[string]interface{}
 
 func TestIntegration_Serialize_Deserialize_WatchQuery(t *testing.T) {
+	if useEmulator {
+		t.Skip("Skipping. PartitionQuery not supported in emulator.")
+	}
 	h := testHelper{t}
 	collID := collectionIDs.New()
 	ctx := context.Background()
@@ -2226,6 +2234,9 @@ func TestDetectProjectID(t *testing.T) {
 }
 
 func TestIntegration_ColGroupRefPartitions(t *testing.T) {
+	if useEmulator {
+		t.Skip("Skipping. PartitionQuery not supported in emulator.")
+	}
 	h := testHelper{t}
 	client := integrationClient(t)
 	coll := client.Collection(collectionIDs.New())
@@ -2275,6 +2286,9 @@ func TestIntegration_ColGroupRefPartitions(t *testing.T) {
 }
 
 func TestIntegration_ColGroupRefPartitionsLarge(t *testing.T) {
+	if useEmulator {
+		t.Skip("Skipping. PartitionQuery not supported in emulator.")
+	}
 	// Create collection with enough documents to have multiple partitions.
 	client := integrationClient(t)
 	coll := client.Collection(collectionIDs.New())
@@ -2356,14 +2370,12 @@ func TestIntegration_NewClientWithDatabase(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Integration tests skipped in short mode")
 	}
-	if iClient == nil {
-		t.Skip("Integration test skipped: did not create client")
-	}
 	for _, tc := range []struct {
-		desc    string
-		dbName  string
-		wantErr bool
-		opt     []option.ClientOption
+		desc           string
+		dbName         string
+		wantErr        bool
+		opt            []option.ClientOption
+		skipInEmulator string
 	}{
 		{
 			desc:    "Success",
@@ -2371,21 +2383,27 @@ func TestIntegration_NewClientWithDatabase(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			desc:    "Error from NewClient bubbled to NewClientWithDatabase",
-			dbName:  testParams["databaseID"].(string),
-			wantErr: true,
-			opt:     []option.ClientOption{option.WithCredentialsFile("non existent filepath")},
+			desc:           "Error from NewClient bubbled to NewClientWithDatabase",
+			dbName:         testParams["databaseID"].(string),
+			wantErr:        true,
+			opt:            []option.ClientOption{option.WithCredentialsFile("non existent filepath")},
+			skipInEmulator: "Skipping. Emulator clients do not validate credentials",
 		},
 	} {
-		ctx := context.Background()
-		c, err := NewClientWithDatabase(ctx, iClient.projectID, tc.dbName, tc.opt...)
-		if err != nil && !tc.wantErr {
-			t.Errorf("NewClientWithDatabase: %s got %v want nil", tc.desc, err)
-		} else if err == nil && tc.wantErr {
-			t.Errorf("NewClientWithDatabase: %s got %v wanted error", tc.desc, err)
-		} else if err == nil && c.databaseID != tc.dbName {
-			t.Errorf("NewClientWithDatabase: %s got %v want %v", tc.desc, c.databaseID, tc.dbName)
-		}
+		t.Run(tc.desc, func(t *testing.T) {
+			if len(tc.skipInEmulator) != 0 {
+				t.Skip(tc.skipInEmulator)
+			}
+			ctx := context.Background()
+			c, err := NewClientWithDatabase(ctx, iClient.projectID, tc.dbName, tc.opt...)
+			if err != nil && !tc.wantErr {
+				t.Errorf("NewClientWithDatabase: %s got %v want nil", tc.desc, err)
+			} else if err == nil && tc.wantErr {
+				t.Errorf("NewClientWithDatabase: %s got %v wanted error", tc.desc, err)
+			} else if err == nil && c.databaseID != tc.dbName {
+				t.Errorf("NewClientWithDatabase: %s got %v want %v", tc.desc, c.databaseID, tc.dbName)
+			}
+		})
 	}
 }
 
