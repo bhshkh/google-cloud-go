@@ -38,6 +38,10 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+const (
+	envEmulator = "BIGTABLE_EMULATOR_HOST"
+)
+
 var (
 	clusterID1 = "cluster-id-1"
 	clusterID2 = "cluster-id-2"
@@ -168,9 +172,10 @@ func TestNewBuiltinMetricsTracerFactory(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
+			t.Setenv(envEmulator, "")
 			if test.setEmulator {
 				// Set environment variable
-				t.Setenv("BIGTABLE_EMULATOR_HOST", "localhost:8086")
+				t.Setenv(envEmulator, "localhost:8086")
 			}
 
 			// open table and compare errors

@@ -1932,7 +1932,7 @@ func TestIntegration_AutomatedBackups(t *testing.T) {
 	}
 
 	if table.AutomatedBackupConfig == nil {
-		t.Errorf("Expect Automated Backup Policy to be enabled for table: %v has info: %v", tableConf.TableID, table)
+		t.Fatalf("Expect Automated Backup Policy to be enabled for table: %v has info: %v", tableConf.TableID, table)
 	}
 	tableAbp := table.AutomatedBackupConfig.(*TableAutomatedBackupPolicy)
 	if !equalOptionalDuration(tableAbp.Frequency, automatedBackupPolicy.Frequency) {
