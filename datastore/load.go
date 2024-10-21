@@ -32,6 +32,8 @@ var (
 	typeOfCivilDateTime = reflect.TypeOf(civil.DateTime{})
 	typeOfCivilTime     = reflect.TypeOf(civil.Time{})
 	typeOfGeoPoint      = reflect.TypeOf(GeoPoint{})
+	typeOfVector32      = reflect.TypeOf(Vector32{})
+	typeOfVector64      = reflect.TypeOf(Vector64{})
 	typeOfKeyPtr        = reflect.TypeOf(&Key{})
 )
 
@@ -54,6 +56,10 @@ func typeMismatchReason(p Property, v reflect.Value) string {
 		entityType = "*datastore.Entity"
 	case GeoPoint:
 		entityType = "GeoPoint"
+	case Vector32:
+		entityType = "Vector32"
+	case Vector64:
+		entityType = "Vector64"
 	case time.Time:
 		entityType = "time.Time"
 	case []byte:
@@ -389,6 +395,18 @@ func setVal(v reflect.Value, p Property) (s string) {
 				return typeMismatchReason(p, v)
 			}
 			v.Set(reflect.ValueOf(x))
+		case typeOfVector32:
+			x, ok := pValue.(Vector32)
+			if !ok && pValue != nil {
+				return typeMismatchReason(p, v)
+			}
+			v.Set(reflect.ValueOf(x))
+		case typeOfVector64:
+			x, ok := pValue.(Vector64)
+			if !ok && pValue != nil {
+				return typeMismatchReason(p, v)
+			}
+			v.Set(reflect.ValueOf(x))
 		case typeOfCivilDate:
 			date := civil.DateOf(pValue.(time.Time).In(time.UTC))
 			v.Set(reflect.ValueOf(date))
@@ -538,6 +556,7 @@ func protoToEntity(src *pb.Entity) (*Entity, error) {
 // propToValue returns a Go value that represents the PropertyValue. For
 // example, a TimestampValue becomes a time.Time.
 func propToValue(v *pb.Value) (interface{}, error) {
+	pbVal := v
 	switch v := v.ValueType.(type) {
 	case *pb.Value_NullValue:
 		return nil, nil
@@ -560,6 +579,10 @@ func propToValue(v *pb.Value) (interface{}, error) {
 	case *pb.Value_EntityValue:
 		return protoToEntity(v.EntityValue)
 	case *pb.Value_ArrayValue:
+		if pbVal.Meaning == meaningVector {
+			val, err := vector64FromProtoValue(pbVal)
+			return val, err
+		}
 		arr := make([]interface{}, 0, len(v.ArrayValue.Values))
 		for _, v := range v.ArrayValue.Values {
 			vv, err := propToValue(v)

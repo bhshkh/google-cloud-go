@@ -44,6 +44,8 @@ type Property struct {
 	//	- *Entity (representing a nested struct)
 	// Value can also be:
 	//	- []interface{} where each element is one of the above types
+	//  - Vector32
+	//  - Vector64
 	// This set is smaller than the set of valid struct field types that the
 	// datastore can load and save. A Value's type must be explicitly on
 	// the list above; it is not sufficient for the underlying type to be
@@ -189,7 +191,7 @@ func validateChildType(t reflect.Type, fieldName string, flatten, prevSlice bool
 		}
 		return validateChildType(t.Elem(), fieldName, flatten, true, prevTypes)
 	case reflect.Struct:
-		if t == typeOfTime || t == typeOfGeoPoint {
+		if t == typeOfTime || t == typeOfGeoPoint || t == typeOfVector32 || t == typeOfVector64 {
 			return nil
 		}
 
@@ -232,7 +234,7 @@ func validateChildType(t reflect.Type, fieldName string, flatten, prevSlice bool
 // isLeafType determines whether or not a type is a 'leaf type'
 // and should not be recursed into, but considered one field.
 func isLeafType(t reflect.Type) bool {
-	return t == typeOfTime || t == typeOfGeoPoint
+	return t == typeOfTime || t == typeOfGeoPoint || t == typeOfVector32 || t == typeOfVector64
 }
 
 // structCache collects the structs whose fields have already been calculated.

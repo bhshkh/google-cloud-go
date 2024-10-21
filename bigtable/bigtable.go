@@ -1613,16 +1613,16 @@ func gaxInvokeWithRecorder(ctx context.Context, mt *builtinMetricsTracer, method
 			statusCode, _ := convertToGrpcStatusErr(err)
 			mt.currOp.currAttempt.setStatus(statusCode.String())
 
+			// Set server latency in tracer
+			serverLatency, serverLatencyErr := extractServerLatency(attemptHeaderMD, attempTrailerMD)
+			mt.currOp.currAttempt.setServerLatencyErr(serverLatencyErr)
+			mt.currOp.currAttempt.setServerLatency(serverLatency)
+
 			// Get location attributes from metadata and set it in tracer
 			// Ignore get location error since the metric can still be recorded with rest of the attributes
 			clusterID, zoneID, _ := extractLocation(attemptHeaderMD, attempTrailerMD)
 			mt.currOp.currAttempt.setClusterID(clusterID)
 			mt.currOp.currAttempt.setZoneID(zoneID)
-
-			// Set server latency in tracer
-			serverLatency, serverLatencyErr := extractServerLatency(attemptHeaderMD, attempTrailerMD)
-			mt.currOp.currAttempt.setServerLatencyErr(serverLatencyErr)
-			mt.currOp.currAttempt.setServerLatency(serverLatency)
 
 			// Record attempt specific metrics
 			recordAttemptCompletion(mt)

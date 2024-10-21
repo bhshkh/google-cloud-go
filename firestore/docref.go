@@ -132,6 +132,7 @@ func (d *DocumentRef) Get(ctx context.Context) (_ *DocumentSnapshot, err error) 
 //   - Slices convert to Array.
 //   - *firestore.DocumentRef converts to Reference.
 //   - Maps and structs convert to Map.
+//   - Vector32 and Vector64 convert to Vector
 //   - nils of any type convert to Null.
 //
 // Pointers and interface{} are also permitted, and their elements processed

@@ -183,6 +183,8 @@ func initReplay() {
 
 		opts = append(opts, grpcHeadersEnforcer.CallOptions()...)
 		opts = append(opts, option.WithGRPCConn(conn))
+		opts = append(opts, option.WithEndpoint("test-datastore.sandbox.googleapis.com:443"))
+
 		client, err := NewClientWithDatabase(ctx, ri.ProjectID, testParams["databaseID"].(string), opts...)
 		if err != nil {
 			t.Fatalf("NewClientWithDatabase: %v", err)
@@ -213,6 +215,7 @@ func newClient(ctx context.Context, t *testing.T, dialOpts []grpc.DialOption, op
 	for _, opt := range dialOpts {
 		opts = append(opts, option.WithGRPCDialOption(opt))
 	}
+	opts = append(opts, option.WithEndpoint("nightly-datastore.sandbox.googleapis.com:443"))
 	client, err := NewClientWithDatabase(ctx, testutil.ProjID(), testParams["databaseID"].(string), opts...)
 	if err != nil {
 		t.Fatalf("NewClientWithDatabase: %v", err)
@@ -2466,5 +2469,130 @@ func TestIntegration_Project_TimestampStoreAndRetrieve(t *testing.T) {
 	}
 	if got, want := res[0].Created.Unix(), now.Unix(); got != want {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestIntegration_FindNearest(t *testing.T) {
+	fmt.Println("in TestIntegration_FindNearest")
+	ctx := context.Background()
+	client := newTestClient(ctx, t)
+	defer client.Close()
+
+	kind := "CoffeeBean"
+	queryProperty := "EmbeddedProperty64"
+	resultProperty := "vector_distance"
+	_ = resultProperty
+	type coffeeBean struct {
+		ID                 string
+		EmbeddedProperty64 Vector64
+		EmbeddedProperty32 Vector32
+		Float32s           []float32 // When querying, saving and retrieving, this should be retrieved as []float32 and not Vector32
+	}
+	beans := []coffeeBean{
+		{ // Euclidean Distance from {1, 2, 3} = 0
+			ID:                 "0",
+			EmbeddedProperty64: []float64{1, 2, 3},
+			EmbeddedProperty32: []float32{1, 2, 3},
+			Float32s:           []float32{1, 2, 3},
+		},
+		{ // Euclidean Distance from {1, 2, 3} = 5.19
+			ID:                 "1",
+			EmbeddedProperty64: []float64{4, 5, 6},
+			EmbeddedProperty32: []float32{4, 5, 6},
+			Float32s:           []float32{4, 5, 6},
+		},
+		// { // Euclidean Distance from {1, 2, 3} = 10.39
+		// 	ID:                 "2",
+		// 	EmbeddedProperty64: []float64{7, 8, 9},
+		// 	EmbeddedProperty32: []float32{7, 8, 9},
+		// 	Float32s:           []float32{7, 8, 9},
+		// },
+		// { // Euclidean Distance from {1, 2, 3} = 15.58
+		// 	ID:                 "3",
+		// 	EmbeddedProperty64: []float64{10, 11, 12},
+		// 	EmbeddedProperty32: []float32{10, 11, 12},
+		// 	Float32s:           []float32{10, 11, 12},
+		// },
+		// {
+		// 	// Euclidean Distance from {1, 2, 3} = 370.42
+		// 	ID:                 "4",
+		// 	EmbeddedProperty64: []float64{100, 200, 300}, // too far from query vector. not within findNearest limit
+		// 	EmbeddedProperty32: []float32{100, 200, 300},
+		// 	Float32s:           []float32{100, 200, 300},
+		// },
+		// {
+		// 	ID:                 "5",
+		// 	EmbeddedProperty64: []float64{1, 2}, // Not enough dimensions as compared to query vector.
+		// 	EmbeddedProperty32: []float32{1, 2},
+		// 	Float32s:           []float32{1, 2},
+		// },
+	}
+
+	keys := make([]*Key, len(beans))
+	for i := 0; i < len(beans); i++ {
+		keys[i] = NameKey(kind, beans[i].ID, nil)
+	}
+
+	keys, err := client.PutMulti(ctx, keys, beans)
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	q := NewQuery(kind)
+	for _, tc := range []struct {
+		desc            string
+		vq              VectorQuery
+		wantBeans       []coffeeBean
+		wantResProperty string
+	}{
+		{
+			desc:      "FindNearest without threshold without resultProperty",
+			vq:        q.FindNearest(queryProperty, []float64{1, 2, 3}, 2, DistanceMeasureEuclidean, nil),
+			wantBeans: beans[:2],
+		},
+		// {
+		// 	desc: "FindNearest threshold and resultProperty",
+		// 	vq: q.FindNearest(queryProperty, []float64{1, 2, 3}, 3, DistanceMeasureEuclidean, &FindNearestOptions{
+		// 		DistanceThreshold:      Ptr(20.0),
+		// 		DistanceResultProperty: resultProperty,
+		// 	}),
+		// 	wantBeans:       beans[:3],
+		// 	wantResProperty: resultProperty,
+		// },
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			iter := client.RunQuery(ctx, tc.vq)
+			var got coffeeBean
+			var gotLen = 0
+			for {
+				_, err := iter.Next(&got)
+				if err == iterator.Done {
+					break
+				}
+				if err != nil {
+					t.Fatalf("Next: %+v", err)
+				}
+
+				// Assert correct entity
+				if tc.wantBeans[gotLen].ID != got.ID {
+					t.Errorf("#%v: want: %v, got: %v", gotLen, tc.wantBeans[gotLen].ID, got.ID)
+				}
+
+				// Assert result property
+				// if len(tc.wantResProperty) != 0 {
+				// 	_, ok := got[tc.wantResProperty]
+				// 	if !ok {
+				// 		t.Errorf("Expected %v field to exist in %v", tc.wantResProperty, got)
+				// 	}
+				// }
+
+				gotLen++
+			}
+
+			// Assert correct number of entities
+			if gotLen != len(tc.wantBeans) {
+				t.Fatalf("Expected %v results, got %d", len(tc.wantBeans), gotLen)
+			}
+		})
 	}
 }
