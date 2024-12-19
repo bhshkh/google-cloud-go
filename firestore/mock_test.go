@@ -22,10 +22,13 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	pb "cloud.google.com/go/firestore/apiv1/firestorepb"
 	"cloud.google.com/go/internal/testutil"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
@@ -47,7 +50,15 @@ type reqItem struct {
 }
 
 func newMockServer() (_ *mockServer, cleanup func(), _ error) {
-	srv, err := testutil.NewServer()
+	opts := []grpc.ServerOption{grpc.KeepaliveParams(keepalive.ServerParameters{
+		MaxConnectionIdle: time.Millisecond,
+		MaxConnectionAge:  time.Millisecond,
+	}), grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+		MinTime:             100 * time.Hour,
+		PermitWithoutStream: false,
+	})}
+	opts = nil
+	srv, err := testutil.NewServer(opts...)
 	if err != nil {
 		return nil, func() {}, err
 	}
@@ -188,18 +199,22 @@ func (s *mockServer) ListDocuments(ctx context.Context, req *pb.ListDocumentsReq
 }
 
 func (s *mockServer) RunQuery(req *pb.RunQueryRequest, qs pb.Firestore_RunQueryServer) error {
+	fmt.Println("Received RunQuery request")
 	res, err := s.popRPC(req)
 	if err != nil {
 		return err
 	}
 	responses := res.([]interface{})
-	for _, res := range responses {
+	for i, res := range responses {
+		fmt.Printf("Resp #%d\n", i)
 		switch res := res.(type) {
 		case *pb.RunQueryResponse:
+			fmt.Println("Returning RunQueryResponse")
 			if err := qs.Send(res); err != nil {
 				return err
 			}
 		case error:
+			fmt.Println("Returning err")
 			return res
 		default:
 			panic(fmt.Sprintf("bad response type in RunQuery: %+v", res))
@@ -246,6 +261,7 @@ func (s *mockServer) Rollback(_ context.Context, req *pb.RollbackRequest) (*empt
 }
 
 func (s *mockServer) Listen(stream pb.Firestore_ListenServer) error {
+	fmt.Println("Received Listen request")
 	req, err := stream.Recv()
 	if err != nil {
 		return err

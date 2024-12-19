@@ -510,10 +510,11 @@ func (s *watchStream) open() (lc pb.Firestore_ListenClient, err error) {
 }
 
 func isPermanentWatchError(err error) bool {
-	if err == io.EOF {
+	if err == io.EOF || shouldRetryRead(err) {
 		// Retry on normal end-of-stream.
 		return false
 	}
+
 	switch status.Code(err) {
 	case codes.Unknown, codes.DeadlineExceeded, codes.ResourceExhausted,
 		codes.Internal, codes.Unavailable, codes.Unauthenticated:

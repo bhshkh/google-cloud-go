@@ -16,8 +16,10 @@ package firestore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
+	"net"
 	"sort"
 	"strings"
 	"testing"
@@ -1140,7 +1142,14 @@ func TestQueryGetAll(t *testing.T) {
 	ctx := context.Background()
 	c, srv, cleanup := newMock(t)
 	srv.reset()
-	defer cleanup()
+
+	origMax := maxReadAttempts
+	maxReadAttempts = 2
+
+	t.Cleanup(func() {
+		cleanup()
+		maxReadAttempts = origMax
+	})
 
 	docNames := []string{"C/a", "C/b"}
 	wantPBDocs := []*pb.Document{
@@ -1158,29 +1167,58 @@ func TestQueryGetAll(t *testing.T) {
 		},
 	}
 	wantReadTimes := []*tspb.Timestamp{aTimestamp, aTimestamp2}
-	srv.addRPC(nil, []interface{}{
-		&pb.RunQueryResponse{Document: wantPBDocs[0], ReadTime: aTimestamp},
-		&pb.RunQueryResponse{Document: wantPBDocs[1], ReadTime: aTimestamp2},
-	})
-	gotDocs, err := c.Collection("C").Documents(ctx).GetAll()
-	if err != nil {
-		t.Fatal(err)
+
+	tests := []struct {
+		desc        string
+		serverResps []interface{}
+	}{
+		{
+			desc: "Successful read",
+			serverResps: []interface{}{
+				&pb.RunQueryResponse{Document: wantPBDocs[0], ReadTime: aTimestamp},
+				&pb.RunQueryResponse{Document: wantPBDocs[1], ReadTime: aTimestamp2},
+			},
+		},
+		{
+			desc: "Should retry on transient error",
+			serverResps: []interface{}{
+				&net.OpError{Op: "blah", Net: "tcp", Err: errors.New("connection reset by peer")},
+				&pb.RunQueryResponse{Document: wantPBDocs[0], ReadTime: aTimestamp},
+				&pb.RunQueryResponse{Document: wantPBDocs[1], ReadTime: aTimestamp2},
+			},
+		},
 	}
-	fmt.Printf("gotDocs: %+v\n", gotDocs)
-	if got, want := len(gotDocs), len(wantPBDocs); got != want {
-		t.Errorf("got %d docs, wanted %d", got, want)
-	}
-	for i, got := range gotDocs {
-		want, err := newDocumentSnapshot(c.Doc(docNames[i]), wantPBDocs[i], c, wantReadTimes[i])
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !testEqual(got, want) {
-			// avoid writing a cycle
-			got.c = nil
-			want.c = nil
-			t.Errorf("#%d: got %+v, want %+v", i, pretty.Value(got), pretty.Value(want))
-		}
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			// Setup server
+			srv.reset()
+			srv.addRPC(nil, test.serverResps)
+
+			// Query documents
+			gotDocs, err := c.Collection("C").Documents(ctx).GetAll()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Verify results length
+			if got, want := len(gotDocs), len(wantPBDocs); got != want {
+				t.Errorf("got %d docs, wanted %d", got, want)
+			}
+
+			for i, got := range gotDocs {
+				// Verify each document
+				want, err := newDocumentSnapshot(c.Doc(docNames[i]), wantPBDocs[i], c, wantReadTimes[i])
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !testEqual(got, want) {
+					// avoid writing a cycle
+					got.c = nil
+					want.c = nil
+					t.Errorf("#%d: got %+v, want %+v", i, pretty.Value(got), pretty.Value(want))
+				}
+			}
+		})
 	}
 }
 

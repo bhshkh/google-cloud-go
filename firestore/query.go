@@ -20,13 +20,17 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"reflect"
+	"strings"
 	"time"
 
 	pb "cloud.google.com/go/firestore/apiv1/firestorepb"
+	"cloud.google.com/go/internal"
 	"cloud.google.com/go/internal/btree"
 	"cloud.google.com/go/internal/protostruct"
 	"cloud.google.com/go/internal/trace"
+	gax "github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -36,6 +40,14 @@ var (
 	errMetricsBeforeEnd     = errors.New("firestore: ExplainMetrics are available only after the iterator reaches the end")
 	errInvalidVector        = errors.New("firestore: queryVector must be Vector32 or Vector64")
 	errMalformedVectorQuery = errors.New("firestore: Malformed VectorQuery. Use FindNearest or FindNearestPath to create VectorQuery")
+	readBackoff             = gax.Backoff{
+		Initial:    100 * time.Millisecond,
+		Max:        60000 * time.Millisecond,
+		Multiplier: 1.30,
+	}
+
+	// Overwritten in tests
+	maxReadAttempts = 5
 )
 
 func errInvalidRunesField(field string) error {
@@ -1400,14 +1412,26 @@ func (it *queryDocumentIterator) next() (_ *DocumentSnapshot, err error) {
 		if it.tid != nil {
 			req.ConsistencySelector = &pb.RunQueryRequest_Transaction{Transaction: it.tid}
 		}
-		it.streamClient, err = client.c.RunQuery(it.ctx, req)
+		err = retryRead(it.ctx, func() error {
+			fmt.Printf("\nCalling RunQuery\n")
+			var err error
+			it.streamClient, err = client.c.RunQuery(it.ctx, req)
+			fmt.Printf("RunQuery err : %+v\n", err)
+			return err
+		})
 		if err != nil {
 			return nil, err
 		}
 	}
 	var res *pb.RunQueryResponse
 	for {
-		res, err = it.streamClient.Recv()
+		err = retryRead(it.ctx, func() error {
+			fmt.Printf("\nCalling Recv\n")
+			var err error
+			res, err = it.streamClient.Recv()
+			fmt.Printf("Recv err : %+v\n", err)
+			return err
+		})
 		if err == io.EOF {
 			return nil, iterator.Done
 		}
@@ -1432,6 +1456,48 @@ func (it *queryDocumentIterator) next() (_ *DocumentSnapshot, err error) {
 		return nil, err
 	}
 	return doc, nil
+}
+
+func retryRead(ctx context.Context, f func() error) error {
+	attempts := 1
+	err := internal.Retry(ctx, readBackoff, func() (stop bool, err error) {
+		err = f()
+		if err != nil && attempts >= maxReadAttempts {
+			return true, fmt.Errorf("firestore: retry failed after %v attempts; last error: %w", maxReadAttempts, err)
+		}
+		attempts++
+		return !shouldRetryRead(err), err
+	})
+	return err
+}
+
+func shouldRetryRead(err error) bool {
+	fmt.Printf("shouldRetryRead %+v\n", err)
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, net.ErrClosed) {
+		return true
+	}
+
+	fmt.Printf("err.Error(): %+v\n", err.Error())
+	// Retry socket-level errors ECONNREFUSED and ECONNRESET (from syscall).
+	// Unfortunately the error type is unexported, so we resort to string
+	// matching.
+	retriable := []string{"connection refused", "connection reset by peer", "broken pipe"}
+	for _, s := range retriable {
+		if strings.Contains(err.Error(), s) {
+			fmt.Println("Contains is true")
+			return true
+		}
+	}
+
+	// Unwrap is only supported in go1.13.x+
+	if e, ok := err.(interface{ Unwrap() error }); ok {
+		return shouldRetryRead(e.Unwrap())
+	}
+	return false
 }
 
 func (it *queryDocumentIterator) getExplainMetrics() (*ExplainMetrics, error) {

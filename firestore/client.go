@@ -265,7 +265,12 @@ func (c *Client) getAll(ctx context.Context, docRefs []*DocumentRef, tid []byte,
 
 	batchGetDocsCtx := withResourceHeader(ctx, req.Database)
 	batchGetDocsCtx = withRequestParamsHeader(batchGetDocsCtx, reqParamsHeaderVal(c.path()))
-	streamClient, err := c.c.BatchGetDocuments(batchGetDocsCtx, req)
+	var streamClient pb.Firestore_BatchGetDocumentsClient
+	err = retryRead(batchGetDocsCtx, func() error {
+		var err error
+		streamClient, err = c.c.BatchGetDocuments(batchGetDocsCtx, req)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +278,13 @@ func (c *Client) getAll(ctx context.Context, docRefs []*DocumentRef, tid []byte,
 	// Read and remember all results from the stream.
 	var resps []*pb.BatchGetDocumentsResponse
 	for {
-		resp, err := streamClient.Recv()
+		var resp *pb.BatchGetDocumentsResponse
+		err = retryRead(batchGetDocsCtx, func() error {
+			var err error
+			resp, err = streamClient.Recv()
+			return err
+		})
+
 		if err == io.EOF {
 			break
 		}
