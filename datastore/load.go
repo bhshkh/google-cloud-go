@@ -74,10 +74,17 @@ type propertyLoader struct {
 }
 
 func (l *propertyLoader) load(codec fields.List, structValue reflect.Value, p Property, prev map[string]struct{}) string {
+	curr := currIndent
+	currIndent++
+	defer func() { currIndent-- }()
+	printLog(curr, "(l *propertyLoader) load p: %+v, p.Value: %+v\n", p, p.Value)
+
 	sl, ok := p.Value.([]interface{})
 	if !ok {
+		printLog(curr, "Is not []interface{}\n")
 		return l.loadOneElement(codec, structValue, p, prev)
 	}
+	printLog(curr, "Is []interface{}\n")
 	for _, val := range sl {
 		p.Value = val
 		if errStr := l.loadOneElement(codec, structValue, p, prev); errStr != "" {
@@ -91,6 +98,11 @@ func (l *propertyLoader) load(codec fields.List, structValue reflect.Value, p Pr
 // codec. codec is used to find the field in structValue into which p should be loaded.
 // prev is the set of property names already seen for structValue.
 func (l *propertyLoader) loadOneElement(codec fields.List, structValue reflect.Value, p Property, prev map[string]struct{}) string {
+	curr := currIndent
+	currIndent++
+	defer func() { currIndent-- }()
+	printLog(curr, "Entering (l *propertyLoader) loadOneElement structValue: %+v, p: %+v\n", structValue, p)
+
 	var sliceOk bool
 	var sliceIndex int
 	var v reflect.Value
@@ -132,6 +144,7 @@ func (l *propertyLoader) loadOneElement(codec fields.List, structValue reflect.V
 
 		// If field implements PLS, we delegate loading to the PLS's Load early,
 		// and stop iterating through fields.
+		printLog(curr, "If field implements PLS v: %+v\n", v)
 		ok, err := plsFieldLoad(v, p, fieldNames)
 		if err != nil {
 			return err.Error()
@@ -175,6 +188,7 @@ func (l *propertyLoader) loadOneElement(codec fields.List, structValue reflect.V
 
 			// If structValue implements PLS, we delegate loading to the PLS's
 			// Load early, and stop iterating through fields.
+			printLog(curr, "If structValue implements PLS p: %+v\n", p)
 			ok, err := plsFieldLoad(structValue, p, fieldNames)
 			if err != nil {
 				return err.Error()
@@ -238,6 +252,10 @@ func (l *propertyLoader) loadOneElement(codec fields.List, structValue reflect.V
 //
 // If subfields are present, the field v has been flattened.
 func plsFieldLoad(v reflect.Value, p Property, subfields []string) (ok bool, err error) {
+	curr := currIndent
+	currIndent++
+	defer func() { currIndent-- }()
+	printLog(curr, "Entering plsFieldLoad v: %+v, p: %+v, subfields: %+v\n", v, p, subfields)
 	vpls, err := plsForLoad(v)
 	if err != nil {
 		return false, err
@@ -441,7 +459,12 @@ func initField(val reflect.Value, index []int) reflect.Value {
 
 // loadEntityProto loads an EntityProto into PropertyLoadSaver or struct pointer.
 func loadEntityProto(dst interface{}, src *pb.Entity) error {
+	curr := currIndent
+	currIndent++
+	defer func() { currIndent-- }()
+	printLog(curr, "Entering loadEntityProto src: %+v, dst: %+v\n", src, dst)
 	ent, err := protoToEntity(src)
+	printLog(curr, "loadEntityProto ent: %+v\n", ent)
 	if err != nil {
 		return err
 	}
@@ -449,7 +472,12 @@ func loadEntityProto(dst interface{}, src *pb.Entity) error {
 }
 
 func loadEntity(dst interface{}, ent *Entity) error {
+	curr := currIndent
+	currIndent++
+	defer func() { currIndent-- }()
+	printLog(curr, "Entering loadEntity ent: %+v, dst: %+v\n", ent, dst)
 	if pls, ok := dst.(PropertyLoadSaver); ok {
+		printLog(curr, "Implements PropertyLoadSaver\n")
 		// Load both key and properties. Try to load as much as possible, even
 		// if an error occurs during loading either the key or the
 		// properties.
@@ -464,10 +492,15 @@ func loadEntity(dst interface{}, ent *Entity) error {
 		}
 		return loadErr
 	}
+	printLog(curr, "Does not implement PropertyLoadSaver\n")
 	return loadEntityToStruct(dst, ent)
 }
 
 func loadEntityToStruct(dst interface{}, ent *Entity) error {
+	curr := currIndent
+	currIndent++
+	defer func() { currIndent-- }()
+	printLog(curr, "Entering loadEntityToStruct dst: %+v, ent: %+v\n", dst, ent)
 	pls, err := newStructPLS(dst)
 	if err != nil {
 		return err
@@ -484,6 +517,10 @@ func loadEntityToStruct(dst interface{}, ent *Entity) error {
 }
 
 func (s structPLS) Load(props []Property) error {
+	curr := currIndent
+	currIndent++
+	defer func() { currIndent-- }()
+	printLog(curr, "Entering structPLS.Load props: %+v\n", props)
 	var fieldName, errReason string
 	var l propertyLoader
 
@@ -507,6 +544,10 @@ func (s structPLS) Load(props []Property) error {
 }
 
 func protoToEntity(src *pb.Entity) (*Entity, error) {
+	curr := currIndent
+	currIndent++
+	defer func() { currIndent-- }()
+	printLog(curr, "Entering protoToEntity src: %+v\n", src)
 	props := make([]Property, 0, len(src.Properties))
 	for name, val := range src.Properties {
 		v, err := propToValue(val)
@@ -538,6 +579,10 @@ func protoToEntity(src *pb.Entity) (*Entity, error) {
 // propToValue returns a Go value that represents the PropertyValue. For
 // example, a TimestampValue becomes a time.Time.
 func propToValue(v *pb.Value) (interface{}, error) {
+	curr := currIndent
+	currIndent++
+	defer func() { currIndent-- }()
+	printLog(curr, "Entering propToValue v: %+v\n", v)
 	switch v := v.ValueType.(type) {
 	case *pb.Value_NullValue:
 		return nil, nil

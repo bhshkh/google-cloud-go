@@ -47,6 +47,8 @@ const (
 	keyFieldName = "__key__"
 )
 
+var currIndent = 0
+
 var stringToOperator = createStringToOperator()
 
 func createStringToOperator() map[string]operator {
@@ -758,8 +760,19 @@ func (c *Client) GetAll(ctx context.Context, q *Query, dst interface{}) (keys []
 	return res.Keys, err
 }
 
+func printLog(indents int, format string, a ...any) (n int, err error) {
+	for i := 0; i < indents; i++ {
+		format = "\t" + format
+	}
+	return fmt.Printf(format, a...)
+}
+
 // GetAllWithOptions is similar to GetAll but runs the query with provided options
 func (c *Client) GetAllWithOptions(ctx context.Context, q *Query, dst interface{}, opts ...RunOption) (res GetAllWithOptionsResult, err error) {
+	curr := currIndent
+	currIndent++
+	defer func() { currIndent-- }()
+	printLog(curr, "Entering GetAllWithOptions\n")
 	ctx = trace.StartSpan(ctx, "cloud.google.com/go/datastore.Query.GetAllWithOptions")
 	defer func() { trace.EndSpan(ctx, err) }()
 
@@ -775,6 +788,7 @@ func (c *Client) GetAllWithOptions(ctx context.Context, q *Query, dst interface{
 			return res, ErrInvalidEntityType
 		}
 		dv = dv.Elem()
+		printLog(currIndent, "dv: %+v, elemType: %+v, mat: %+v\n", dv, elemType, mat)
 		mat, elemType = checkMultiArg(dv)
 		if mat == multiArgTypeInvalid || mat == multiArgTypeInterface {
 			return res, ErrInvalidEntityType
