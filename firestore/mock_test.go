@@ -199,22 +199,22 @@ func (s *mockServer) ListDocuments(ctx context.Context, req *pb.ListDocumentsReq
 }
 
 func (s *mockServer) RunQuery(req *pb.RunQueryRequest, qs pb.Firestore_RunQueryServer) error {
-	fmt.Println("Received RunQuery request")
+	fmt.Println("mockserver: Received RunQuery request")
 	res, err := s.popRPC(req)
 	if err != nil {
 		return err
 	}
 	responses := res.([]interface{})
 	for i, res := range responses {
-		fmt.Printf("Resp #%d\n", i)
+		fmt.Printf("mockserver: Resp #%d\n", i)
 		switch res := res.(type) {
 		case *pb.RunQueryResponse:
-			fmt.Println("Returning RunQueryResponse")
+			fmt.Println("mockserver: Returning RunQueryResponse")
 			if err := qs.Send(res); err != nil {
 				return err
 			}
 		case error:
-			fmt.Println("Returning err")
+			fmt.Println("mockserver: Returning err")
 			return res
 		default:
 			panic(fmt.Sprintf("bad response type in RunQuery: %+v", res))
@@ -261,7 +261,7 @@ func (s *mockServer) Rollback(_ context.Context, req *pb.RollbackRequest) (*empt
 }
 
 func (s *mockServer) Listen(stream pb.Firestore_ListenServer) error {
-	fmt.Println("Received Listen request")
+	fmt.Println("mockserver: Received Listen request")
 	req, err := stream.Recv()
 	if err != nil {
 		return err

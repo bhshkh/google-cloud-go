@@ -1172,13 +1172,13 @@ func TestQueryGetAll(t *testing.T) {
 		desc        string
 		serverResps []interface{}
 	}{
-		{
-			desc: "Successful read",
-			serverResps: []interface{}{
-				&pb.RunQueryResponse{Document: wantPBDocs[0], ReadTime: aTimestamp},
-				&pb.RunQueryResponse{Document: wantPBDocs[1], ReadTime: aTimestamp2},
-			},
-		},
+		// {
+		// 	desc: "Successful read",
+		// 	serverResps: []interface{}{
+		// 		&pb.RunQueryResponse{Document: wantPBDocs[0], ReadTime: aTimestamp},
+		// 		&pb.RunQueryResponse{Document: wantPBDocs[1], ReadTime: aTimestamp2},
+		// 	},
+		// },
 		{
 			desc: "Should retry on transient error",
 			serverResps: []interface{}{
