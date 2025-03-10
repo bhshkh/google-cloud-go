@@ -17,10 +17,12 @@ limitations under the License.
 package bigtable // import "cloud.google.com/go/bigtable"
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"net/url"
 	"os"
@@ -41,6 +43,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -55,6 +58,7 @@ const mtlsProdAddr = "bigtable.mtls.googleapis.com:443"
 const featureFlagsHeaderKey = "bigtable-features"
 
 var errNegativeRowLimit = errors.New("bigtable: row limit cannot be negative")
+var crc32cTable = crc32.MakeTable(crc32.Castagnoli)
 
 // Client is a client for reading and writing data to tables in an instance.
 //
@@ -453,6 +457,7 @@ func (c *Client) prepareStatement(ctx context.Context, mt *builtinMetricsTracer,
 	}
 
 	return &PreparedStatement{
+
 		c:             c,
 		metadata:      res.Metadata,
 		preparedQuery: res.PreparedQuery,
@@ -470,11 +475,8 @@ type BoundStatement struct {
 
 // Bind binds a set of parameters to a prepared statement.
 //
-// Allowed parameter value types are []byte, string, int64, float32, float64, bool,
 // time.Time, civil.Date, array, slice and nil
 func (ps *PreparedStatement) Bind(values map[string]any) (*BoundStatement, error) {
-	bs := BoundStatement{
-		ps:     ps,
 		params: map[string]*btpb.Value{},
 	}
 
@@ -505,6 +507,199 @@ func (ps *PreparedStatement) Bind(values map[string]any) (*BoundStatement, error
 		ps:     ps,
 		params: boundParams,
 	}, nil
+}
+
+type ResultRow struct {
+	values         []*btpb.Value
+	metadata       *btpb.ResultSetMetadata
+	colNameToIndex map[string]int
+}
+
+func (rr ResultRow) ColumnByName(name string, dst *DataType) error {
+	// TODO: Validate type
+	// colType := col.GetType()
+	//
+	//	if colType.GetKind() != frontVal.GetKind() {
+	//		return errors.New("bigtable: type mismatch")
+	//	}
+
+	colIndex := rr.colNameToIndex[name]
+	colVal := rr.values[colIndex]
+	// TODO: nil checks
+	switch rr.metadata.GetProtoSchema().GetColumns()[colIndex].GetType().GetKind().(type) {
+	case *btpb.Type_StringType:
+		// Check that dst is StringDataType
+		if sdt, ok := (*dst).(*StringDataType); ok {
+			sdt.string = colVal.GetStringValue()
+			return nil
+		}
+		return fmt.Errorf("dst is not a *StringDataType")
+	default:
+		return errors.New("bigtable: unsupported type for column " + name)
+	}
+}
+
+// ExecuteOption is an optional argument to Execute.
+type ExecuteOption interface {
+}
+
+func (bs *BoundStatement) Execute(ctx context.Context, f func(ResultRow) bool, opts ...ExecuteOption) (err error) {
+	// TODO: Move to function
+	md := metadata.Join(metadata.Pairs(
+		resourcePrefixHeader, bs.ps.c.fullInstanceName(),
+		requestParamsHeader, bs.ps.c.reqParamsHeaderValInstance(),
+	), bs.ps.c.newFeatureFlags())
+	ctx = mergeOutgoingMetadata(ctx, md)
+
+	ctx = trace.StartSpan(ctx, "cloud.google.com/go/bigtable.ExecuteQuery")
+	defer func() { trace.EndSpan(ctx, err) }()
+
+	mt := bs.ps.c.newBuiltinMetricsTracer(ctx, "", true)
+	defer recordOperationCompletion(mt)
+
+	err = bs.execute(ctx, f, mt)
+	statusCode, statusErr := convertToGrpcStatusErr(err)
+	mt.currOp.setStatus(statusCode.String())
+	return statusErr
+}
+
+func printValues(values []*btpb.Value) {
+	for i, val := range values {
+		jsonBytes, _ := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true, Multiline: true}.Marshal(val)
+		fmt.Printf("values: i: %+v, val: %+v\n", i, string(jsonBytes))
+	}
+}
+
+func (bs *BoundStatement) execute(ctx context.Context, f func(ResultRow) bool, mt *builtinMetricsTracer) error {
+	var batchBuffer bytes.Buffer
+	values := []*btpb.Value{}
+	err := gaxInvokeWithRecorder(ctx, mt, "ExecuteQuery", func(ctx context.Context, headerMD, trailerMD *metadata.MD, _ gax.CallSettings) error {
+		req := &btpb.ExecuteQueryRequest{
+			InstanceName:  bs.ps.c.fullInstanceName(),
+			AppProfileId:  bs.ps.c.appProfile,
+			PreparedQuery: bs.ps.preparedQuery,
+			Params:        bs.params,
+		}
+
+		ctx, cancel := context.WithCancel(ctx) // for aborting the stream
+		defer cancel()
+
+		var err error
+		stream, err := bs.ps.c.client.ExecuteQuery(ctx, req)
+		if err != nil {
+			return err
+		}
+
+		// Ignore error since header is only being used to record builtin metrics
+		// Failure to record metrics should not fail the operation
+		*headerMD, _ = stream.Header()
+		eqResp := new(btpb.ExecuteQueryResponse)
+		for {
+			proto.Reset(eqResp)
+			err := stream.RecvMsg(eqResp)
+			if err == io.EOF {
+				*trailerMD = stream.Trailer()
+				break
+			}
+			if err != nil {
+				*trailerMD = stream.Trailer()
+				return err
+			}
+
+			resp := eqResp.GetResponse()
+			results, ok := resp.(*btpb.ExecuteQueryResponse_Results)
+			if !ok {
+				return errors.New("bigtable: unexpected response type")
+			}
+
+			partialResultSet := results.Results
+			if partialResultSet.GetReset_() {
+				batchBuffer.Reset()
+				values = []*btpb.Value{}
+			}
+
+			var currBatch []byte
+			if partialResultSet.GetProtoRowsBatch() != nil {
+				currBatch = partialResultSet.GetProtoRowsBatch().GetBatchData()
+				batchBuffer.Write(currBatch)
+			}
+			// TODO: Validate checksum if exists
+			var protoRows *btpb.ProtoRows
+			if partialResultSet.BatchChecksum != nil {
+				currBatchCheckSum := crc32.Checksum(currBatch, crc32cTable)
+				_ = currBatchCheckSum
+				checksum := crc32.Checksum(batchBuffer.Bytes(), crc32cTable)
+				// if *partialResultSet.BatchChecksum != checksum {
+				// 	return errors.New("bigtable: batch checksum mismatch")
+				// }
+				_ = checksum
+
+				// Parse buffer
+				protoRows = new(btpb.ProtoRows)
+				if err := proto.Unmarshal(batchBuffer.Bytes(), protoRows); err != nil {
+					return err
+				}
+				batchBuffer.Reset()
+
+				// TODO: Remove this
+				printValues(protoRows.GetValues())
+
+				values = append(values, protoRows.GetValues()...)
+			}
+			if partialResultSet.GetResumeToken() != nil ||
+				len(partialResultSet.GetResumeToken()) != 0 {
+				req.ResumeToken = partialResultSet.GetResumeToken()
+				if batchBuffer.Len() != 0 {
+					return errors.New("bigtable: received resumeToken with buffered data and no checksum")
+				}
+
+				if bs.ps.metadata == nil || bs.ps.metadata.GetProtoSchema() == nil {
+					// TODO: Maybe do not return error and try to prepare again
+					return errors.New("bigtable: metadata missing")
+				}
+				cols := bs.ps.metadata.GetProtoSchema().GetColumns()
+				// printColumns(cols) // TODO: Remove this
+
+				// Parse rows
+				for len(values) != 0 {
+					completeRow := []*btpb.Value{}
+					rr := ResultRow{
+						values:   completeRow,
+						metadata: bs.ps.metadata,
+					}
+					rr.values, values = values[0:len(cols)], values[len(cols):]
+
+					continueReading := f(rr)
+					if !continueReading {
+						// Cancel and drain stream.
+						cancel()
+						for {
+							proto.Reset(eqResp)
+							if err := stream.RecvMsg(eqResp); err != nil {
+								*trailerMD = stream.Trailer()
+								// The stream has ended. We don't return an error
+								// because the caller has intentionally interrupted the scan.
+								return nil
+							}
+						}
+					}
+				}
+
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func printColumns(cols []*btpb.ColumnMetadata) {
+	for i, col := range cols {
+		jsonBytes, _ := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true, Multiline: true}.Marshal(col)
+		fmt.Printf("cols: i: %+v, col: %+v\n", i, string(jsonBytes))
+	}
 }
 
 func (ti *tableImpl) ReadRows(ctx context.Context, arg RowSet, f func(Row) bool, opts ...ReadOption) error {
@@ -1560,6 +1755,9 @@ func (t *Table) doApplyBulk(ctx context.Context, entryErrs []*entryErr, headerMD
 		req.AuthorizedViewName = t.c.fullAuthorizedViewName(t.table, t.authorizedView)
 	}
 
+	jsonBytes, _ := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true, Multiline: true}.Marshal(req)
+	// fmt.Printf("MutateRows req: %+v\n", string(jsonBytes))
+	_ = jsonBytes
 	stream, err := t.c.client.MutateRows(ctx, req)
 	if err != nil {
 		_, topLevelErr = convertToGrpcStatusErr(err)

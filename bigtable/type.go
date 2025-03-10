@@ -22,7 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Type wraps the protobuf representation of a type. See the protobuf definition
+// Type wraps the protobuf representation of a schema type. See the protobuf definition
 // for more details on types.
 type Type interface {
 	proto() *btapb.Type
@@ -99,6 +99,22 @@ func (bytes BytesType) proto() *btapb.Type {
 		encoding = RawBytesEncoding{}.proto()
 	}
 	return &btapb.Type{Kind: &btapb.Type_BytesType{BytesType: &btapb.Type_Bytes{Encoding: encoding}}}
+}
+
+type MapType struct {
+	KeyType   Type
+	ValueType Type
+}
+
+func (mapType MapType) proto() *btapb.Type {
+	return &btapb.Type{
+		Kind: &btapb.Type_MapType{
+			MapType: &btapb.Type_Map{
+				KeyType:   mapType.KeyType.proto(),
+				ValueType: mapType.ValueType.proto(),
+			},
+		},
+	}
 }
 
 // StringEncoding represents the encoding of a String.
