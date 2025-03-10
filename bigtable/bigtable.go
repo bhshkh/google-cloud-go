@@ -17,10 +17,12 @@ limitations under the License.
 package bigtable // import "cloud.google.com/go/bigtable"
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"net/url"
 	"os"
@@ -41,7 +43,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	// Install google-c2p resolver, which is required for direct path.
 	_ "google.golang.org/grpc/xds/googledirectpath"
@@ -54,6 +58,7 @@ const mtlsProdAddr = "bigtable.mtls.googleapis.com:443"
 const featureFlagsHeaderKey = "bigtable-features"
 
 var errNegativeRowLimit = errors.New("bigtable: row limit cannot be negative")
+var crc32cTable = crc32.MakeTable(crc32.Castagnoli)
 
 // Client is a client for reading and writing data to tables in an instance.
 //
@@ -239,7 +244,9 @@ func convertToGrpcStatusErr(err error) (codes.Code, error) {
 
 	return codes.Unknown, err
 }
-
+func (c *Client) fullInstanceName() string {
+	return fmt.Sprintf("projects/%s/instances/%s", c.project, c.instance)
+}
 func (c *Client) fullTableName(table string) string {
 	return fmt.Sprintf("projects/%s/instances/%s/tables/%s", c.project, c.instance, table)
 }
@@ -250,6 +257,10 @@ func (c *Client) fullAuthorizedViewName(table string, authorizedView string) str
 
 func (c *Client) requestParamsHeaderValue(table string) string {
 	return fmt.Sprintf("table_name=%s&app_profile_id=%s", url.QueryEscape(c.fullTableName(table)), url.QueryEscape(c.appProfile))
+}
+
+func (c *Client) requestParamsHeaderValueInstance() string {
+	return fmt.Sprintf("name=%s&app_profile_id=%s", url.QueryEscape(c.fullInstanceName()), url.QueryEscape(c.appProfile))
 }
 
 // mergeOutgoingMetadata returns a context populated by the existing outgoing
@@ -341,6 +352,337 @@ func (c *Client) OpenAuthorizedView(table, authorizedView string) TableAPI {
 		), c.newFeatureFlags()),
 		authorizedView: authorizedView,
 	}}
+}
+
+type PreparedStatement struct {
+	c          *Client
+	paramTypes map[string]*btpb.Type
+
+	// The time at which PrepareQuery was invoked
+	prepareStart time.Time
+	// Structure of rows in the response stream of `ExecuteQueryResponse` for the
+	// returned `prepared_query`.
+	metadata       *btpb.ResultSetMetadata
+	colNameToIndex map[string]int
+	// A serialized prepared query. Clients should treat this as an opaque
+	// blob of bytes to send in `ExecuteQueryRequest`.
+	preparedQuery []byte
+	// The time at which the prepared query token becomes invalid.
+	// A token may become invalid early due to changes in the data being read, but
+	// it provides a guideline to refresh query plans asynchronously.
+	validUntil *timestamppb.Timestamp
+}
+
+type PrepareOption interface {
+}
+
+func (c *Client) PrepareStatement(ctx context.Context, query string, paramTypes map[string]DataType, opts ...PrepareOption) (preparedStatement *PreparedStatement, err error) {
+	// TODO: Move to function
+	md := metadata.Join(metadata.Pairs(
+		resourcePrefixHeader, c.fullInstanceName(),
+		requestParamsHeader, c.requestParamsHeaderValueInstance(),
+	), c.newFeatureFlags())
+
+	ctx = mergeOutgoingMetadata(ctx, md)
+	ctx = trace.StartSpan(ctx, "cloud.google.com/go/bigtable.PrepareQuery")
+	defer func() { trace.EndSpan(ctx, err) }()
+
+	mt := c.newBuiltinMetricsTracer(ctx, false)
+	defer recordOperationCompletion(mt)
+
+	preparedStatement, err = c.prepareStatement(ctx, mt, query, paramTypes, opts...)
+	statusCode, statusErr := convertToGrpcStatusErr(err)
+	mt.currOp.setStatus(statusCode.String())
+	return preparedStatement, statusErr
+}
+
+func (c *Client) prepareStatement(ctx context.Context, mt *builtinMetricsTracer, query string, paramTypes map[string]DataType, opts ...PrepareOption) (*PreparedStatement, error) {
+	reqParamTypes := map[string]*btpb.Type{}
+	for k, v := range paramTypes {
+		reqParamTypes[k] = v.typeProto()
+	}
+	req := &btpb.PrepareQueryRequest{
+		InstanceName: c.fullInstanceName(),
+		AppProfileId: c.appProfile,
+		Query:        query,
+		ParamTypes:   reqParamTypes,
+	}
+	var res *btpb.PrepareQueryResponse
+	var prepareStart time.Time
+	var colNameToIndex map[string]int
+	err := gaxInvokeWithRecorder(ctx, mt, "PrepareQuery", func(ctx context.Context, headerMD, trailerMD *metadata.MD, _ gax.CallSettings) error {
+		var err error
+		jsonBytes, _ := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true, Multiline: true}.Marshal(req)
+		fmt.Printf("PrepareQuery json req: %+v\n", string(jsonBytes))
+		prepareStart = time.Now()
+		res, err = c.client.PrepareQuery(ctx, req, grpc.Header(headerMD), grpc.Trailer(trailerMD))
+
+		if err != nil {
+			return err
+		}
+
+		if res.Metadata == nil || res.Metadata.GetProtoSchema() == nil {
+			return errors.New("bigtable: metadata missing")
+		}
+
+		// Create colNameToIndex map
+		colNameToIndex = map[string]int{}
+		for i, col := range res.Metadata.GetProtoSchema().GetColumns() {
+			colNameToIndex[col.GetName()] = i
+		}
+
+		return nil
+	}, retryOptions...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PreparedStatement{
+		c:              c,
+		metadata:       res.Metadata,
+		colNameToIndex: colNameToIndex,
+		preparedQuery:  res.PreparedQuery,
+		validUntil:     res.ValidUntil,
+		paramTypes:     reqParamTypes,
+		prepareStart:   prepareStart,
+	}, err
+}
+
+type BoundStatement struct {
+	ps     *PreparedStatement
+	params map[string]*btpb.Value
+}
+
+func (ps *PreparedStatement) Bind(values map[string]any) (*BoundStatement, error) {
+	bs := BoundStatement{
+		ps:     ps,
+		params: map[string]*btpb.Value{},
+	}
+	if values == nil {
+		return &bs, nil
+	}
+
+	boundParams := map[string]*btpb.Value{}
+	for pname, pval := range values {
+		typeInQuery, found := ps.paramTypes[pname]
+		if !found {
+			return &bs, errors.New("bigtable: no parameter with name " + pname + " in prepared statement")
+		}
+
+		switch typeInQuery.GetKind().(type) {
+		case *btpb.Type_StringType:
+			v, ok := pval.(string)
+			if !ok {
+				return nil, errors.New("bigtable: type mismatch while binding parameter " + pname + ". Expected StringDataType")
+			}
+			boundParams[pname] = NewStringDataType(v).dataProto()
+
+			// TODO: Compare this
+			// if wantType.Kind != *btpb.Type_StringType{} {
+			// 	return bs, errors.New("bigtable: type mismatch for parameter " + k + ". Expected StringDataType")
+			// }
+		default:
+			return &bs, errors.New("bigtable: unsupported type for parameter " + pname)
+		}
+	}
+
+	return &BoundStatement{
+		ps:     ps,
+		params: boundParams,
+	}, nil
+}
+
+type ResultRow struct {
+	values         []*btpb.Value
+	metadata       *btpb.ResultSetMetadata
+	colNameToIndex map[string]int
+}
+
+func (rr ResultRow) ColumnByName(name string, dst *DataType) error {
+	// TODO: Validate type
+	// colType := col.GetType()
+	//
+	//	if colType.GetKind() != frontVal.GetKind() {
+	//		return errors.New("bigtable: type mismatch")
+	//	}
+
+	colIndex := rr.colNameToIndex[name]
+	colVal := rr.values[colIndex]
+	// TODO: nil checks
+	switch rr.metadata.GetProtoSchema().GetColumns()[colIndex].GetType().GetKind().(type) {
+	case *btpb.Type_StringType:
+		// Check that dst is StringDataType
+		if sdt, ok := (*dst).(*StringDataType); ok {
+			sdt.string = colVal.GetStringValue()
+			return nil
+		}
+		return fmt.Errorf("dst is not a *StringDataType")
+	default:
+		return errors.New("bigtable: unsupported type for column " + name)
+	}
+}
+
+// ExecuteOption is an optional argument to Execute.
+type ExecuteOption interface {
+}
+
+func (bs *BoundStatement) Execute(ctx context.Context, f func(ResultRow) bool, opts ...ExecuteOption) (err error) {
+	// TODO: Move to function
+	md := metadata.Join(metadata.Pairs(
+		resourcePrefixHeader, bs.ps.c.fullInstanceName(),
+		requestParamsHeader, bs.ps.c.requestParamsHeaderValueInstance(),
+	), bs.ps.c.newFeatureFlags())
+	ctx = mergeOutgoingMetadata(ctx, md)
+
+	ctx = trace.StartSpan(ctx, "cloud.google.com/go/bigtable.ExecuteQuery")
+	defer func() { trace.EndSpan(ctx, err) }()
+
+	mt := bs.ps.c.newBuiltinMetricsTracer(ctx, true)
+	defer recordOperationCompletion(mt)
+
+	err = bs.execute(ctx, f, mt)
+	statusCode, statusErr := convertToGrpcStatusErr(err)
+	mt.currOp.setStatus(statusCode.String())
+	return statusErr
+}
+
+func printValues(values []*btpb.Value) {
+	for i, val := range values {
+		jsonBytes, _ := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true, Multiline: true}.Marshal(val)
+		fmt.Printf("values: i: %+v, val: %+v\n", i, string(jsonBytes))
+	}
+}
+
+func (bs *BoundStatement) execute(ctx context.Context, f func(ResultRow) bool, mt *builtinMetricsTracer) error {
+	var batchBuffer bytes.Buffer
+	values := []*btpb.Value{}
+	err := gaxInvokeWithRecorder(ctx, mt, "ExecuteQuery", func(ctx context.Context, headerMD, trailerMD *metadata.MD, _ gax.CallSettings) error {
+		req := &btpb.ExecuteQueryRequest{
+			InstanceName:  bs.ps.c.fullInstanceName(),
+			AppProfileId:  bs.ps.c.appProfile,
+			PreparedQuery: bs.ps.preparedQuery,
+			Params:        bs.params,
+		}
+
+		ctx, cancel := context.WithCancel(ctx) // for aborting the stream
+		defer cancel()
+
+		var err error
+		stream, err := bs.ps.c.client.ExecuteQuery(ctx, req)
+		if err != nil {
+			return err
+		}
+
+		// Ignore error since header is only being used to record builtin metrics
+		// Failure to record metrics should not fail the operation
+		*headerMD, _ = stream.Header()
+		eqResp := new(btpb.ExecuteQueryResponse)
+		for {
+			proto.Reset(eqResp)
+			err := stream.RecvMsg(eqResp)
+			if err == io.EOF {
+				*trailerMD = stream.Trailer()
+				break
+			}
+			if err != nil {
+				*trailerMD = stream.Trailer()
+				return err
+			}
+
+			resp := eqResp.GetResponse()
+			results, ok := resp.(*btpb.ExecuteQueryResponse_Results)
+			if !ok {
+				return errors.New("bigtable: unexpected response type")
+			}
+
+			partialResultSet := results.Results
+			if partialResultSet.GetReset_() {
+				batchBuffer.Reset()
+				values = []*btpb.Value{}
+			}
+
+			var currBatch []byte
+			if partialResultSet.GetProtoRowsBatch() != nil {
+				currBatch = partialResultSet.GetProtoRowsBatch().GetBatchData()
+				batchBuffer.Write(currBatch)
+			}
+			// TODO: Validate checksum if exists
+			var protoRows *btpb.ProtoRows
+			if partialResultSet.BatchChecksum != nil {
+				currBatchCheckSum := crc32.Checksum(currBatch, crc32cTable)
+				_ = currBatchCheckSum
+				checksum := crc32.Checksum(batchBuffer.Bytes(), crc32cTable)
+				// if *partialResultSet.BatchChecksum != checksum {
+				// 	return errors.New("bigtable: batch checksum mismatch")
+				// }
+				_ = checksum
+
+				// Parse buffer
+				protoRows = new(btpb.ProtoRows)
+				if err := proto.Unmarshal(batchBuffer.Bytes(), protoRows); err != nil {
+					return err
+				}
+				batchBuffer.Reset()
+
+				// TODO: Remove this
+				printValues(protoRows.GetValues())
+
+				values = append(values, protoRows.GetValues()...)
+			}
+			if partialResultSet.GetResumeToken() != nil ||
+				len(partialResultSet.GetResumeToken()) != 0 {
+				req.ResumeToken = partialResultSet.GetResumeToken()
+				if batchBuffer.Len() != 0 {
+					return errors.New("bigtable: received resumeToken with buffered data and no checksum")
+				}
+
+				if bs.ps.metadata == nil || bs.ps.metadata.GetProtoSchema() == nil {
+					// TODO: Maybe do not return error and try to prepare again
+					return errors.New("bigtable: metadata missing")
+				}
+				cols := bs.ps.metadata.GetProtoSchema().GetColumns()
+				// printColumns(cols) // TODO: Remove this
+
+				// Parse rows
+				for len(values) != 0 {
+					completeRow := []*btpb.Value{}
+					rr := ResultRow{
+						values:   completeRow,
+						metadata: bs.ps.metadata,
+					}
+					rr.values, values = values[0:len(cols)], values[len(cols):]
+
+					continueReading := f(rr)
+					if !continueReading {
+						// Cancel and drain stream.
+						cancel()
+						for {
+							proto.Reset(eqResp)
+							if err := stream.RecvMsg(eqResp); err != nil {
+								*trailerMD = stream.Trailer()
+								// The stream has ended. We don't return an error
+								// because the caller has intentionally interrupted the scan.
+								return nil
+							}
+						}
+					}
+				}
+
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func printColumns(cols []*btpb.ColumnMetadata) {
+	for i, col := range cols {
+		jsonBytes, _ := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true, Multiline: true}.Marshal(col)
+		fmt.Printf("cols: i: %+v, col: %+v\n", i, string(jsonBytes))
+	}
 }
 
 func (ti *tableImpl) ReadRows(ctx context.Context, arg RowSet, f func(Row) bool, opts ...ReadOption) error {
@@ -1394,6 +1736,9 @@ func (t *Table) doApplyBulk(ctx context.Context, entryErrs []*entryErr, headerMD
 		req.AuthorizedViewName = t.c.fullAuthorizedViewName(t.table, t.authorizedView)
 	}
 
+	jsonBytes, _ := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true, Multiline: true}.Marshal(req)
+	// fmt.Printf("MutateRows req: %+v\n", string(jsonBytes))
+	_ = jsonBytes
 	stream, err := t.c.client.MutateRows(ctx, req)
 	if err != nil {
 		_, topLevelErr = convertToGrpcStatusErr(err)
@@ -1629,6 +1974,11 @@ func (t *Table) sampleRowKeys(ctx context.Context, mt *builtinMetricsTracer) ([]
 
 func (t *Table) newBuiltinMetricsTracer(ctx context.Context, isStreaming bool) *builtinMetricsTracer {
 	mt := t.c.metricsTracerFactory.createBuiltinMetricsTracer(ctx, t.table, isStreaming)
+	return &mt
+}
+
+func (c *Client) newBuiltinMetricsTracer(ctx context.Context, isStreaming bool) *builtinMetricsTracer {
+	mt := c.metricsTracerFactory.createBuiltinMetricsTracer(ctx, "", isStreaming)
 	return &mt
 }
 
