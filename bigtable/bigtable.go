@@ -515,28 +515,74 @@ type ResultRow struct {
 	colNameToIndex map[string]int
 }
 
-func (rr ResultRow) ColumnByName(name string, dst *DataType) error {
-	// TODO: Validate type
-	// colType := col.GetType()
-	//
-	//	if colType.GetKind() != frontVal.GetKind() {
-	//		return errors.New("bigtable: type mismatch")
-	//	}
+func kindToGoDataType(kind *btpb.Type, value *btpb.Value) (any, error) {
+	switch t := kind.GetKind().(type) {
 
-	colIndex := rr.colNameToIndex[name]
-	colVal := rr.values[colIndex]
-	// TODO: nil checks
-	switch rr.metadata.GetProtoSchema().GetColumns()[colIndex].GetType().GetKind().(type) {
+	case *btpb.Type_BytesType:
+		return value.GetBytesValue(), nil
 	case *btpb.Type_StringType:
-		// Check that dst is StringDataType
-		if sdt, ok := (*dst).(*StringDataType); ok {
-			sdt.string = colVal.GetStringValue()
-			return nil
+		return value.GetStringValue(), nil
+	case *btpb.Type_Int64Type:
+		return value.GetIntValue(), nil
+	case *btpb.Type_Float32Type:
+		return float32(value.GetFloatValue()), nil
+	case *btpb.Type_Float64Type:
+		return value.GetFloatValue(), nil
+	case *btpb.Type_BoolType:
+		return value.GetBoolValue(), nil
+	case *btpb.Type_TimestampType:
+		return value.GetTimestampValue(), nil
+	case *btpb.Type_DateType:
+		return value.GetDateValue(), nil
+	// case *btpb.Type_AggregateType:
+	// 	return value.GetAggregateValue(), nil
+	case *btpb.Type_StructType:
+		if t.StructType == nil || value == nil || value.GetArrayValue() == nil || value.GetArrayValue().GetValues() == nil {
+			return nil, nil
 		}
-		return fmt.Errorf("dst is not a *StringDataType")
+		valArray := value.GetArrayValue().GetValues()
+
+		structVal := map[string]any{}
+		for i, f := range t.StructType.GetFields() {
+			var err error
+			structVal[f.GetFieldName()], err = kindToGoDataType(f.GetType(), valArray[i])
+			if err != nil {
+				return nil, err
+			}
+		}
+		return structVal, nil
+	case *btpb.Type_ArrayType:
+		if t.ArrayType == nil || t.ArrayType.GetElementType() == nil {
+			return nil, nil
+		}
+
+		for i, val := range value.GetArrayValue().GetValues() {
+			var err error
+			kindToGoDataType(t.ArrayType.GetElementType(), val)
+		}
+	case *btpb.Type_MapType:
 	default:
-		return errors.New("bigtable: unsupported type for column " + name)
+		return nil, errors.New("bigtable: unsupported type " + kind.String() + " for column " + value.String())
 	}
+
+	return nil, nil
+}
+
+func (rr ResultRow) Data() (map[string]any, error) {
+	data := map[string]any{}
+	for i, col := range rr.metadata.GetProtoSchema().GetColumns() {
+
+		if col.GetType() == nil || col.GetType().GetKind() == nil {
+			data[col.Name] = nil
+			continue
+		}
+		var err error
+		data[col.Name], err = kindToGoDataType(col.GetType(), rr.values[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return data, nil
 }
 
 // ExecuteOption is an optional argument to Execute.
@@ -570,15 +616,28 @@ func printValues(values []*btpb.Value) {
 	}
 }
 
+func handleStreamEnd(stream btpb.Bigtable_ExecuteQueryClient, trailerMD *metadata.MD, valuesBuffer []*btpb.Value, err error) error {
+	if err != nil && err != io.EOF {
+		return err
+	}
+	// TODO: Check success
+	*trailerMD = stream.Trailer()
+	if len(valuesBuffer) != 0 {
+		return errors.New("bigtable: server stream ended without sending a resume token")
+	}
+	return nil
+}
 func (bs *BoundStatement) execute(ctx context.Context, f func(ResultRow) bool, mt *builtinMetricsTracer) error {
-	var batchBuffer bytes.Buffer
-	values := []*btpb.Value{}
+	var ongoingResultBatch bytes.Buffer
+	valuesBuffer := []*btpb.Value{}
+	var resumeToken []byte
 	err := gaxInvokeWithRecorder(ctx, mt, "ExecuteQuery", func(ctx context.Context, headerMD, trailerMD *metadata.MD, _ gax.CallSettings) error {
 		req := &btpb.ExecuteQueryRequest{
 			InstanceName:  bs.ps.c.fullInstanceName(),
 			AppProfileId:  bs.ps.c.appProfile,
 			PreparedQuery: bs.ps.preparedQuery,
 			Params:        bs.params,
+			ResumeToken:   resumeToken,
 		}
 
 		ctx, cancel := context.WithCancel(ctx) // for aborting the stream
@@ -598,12 +657,11 @@ func (bs *BoundStatement) execute(ctx context.Context, f func(ResultRow) bool, m
 			proto.Reset(eqResp)
 			err := stream.RecvMsg(eqResp)
 			if err == io.EOF {
-				*trailerMD = stream.Trailer()
-				break
+				return handleStreamEnd(stream, trailerMD, valuesBuffer, err)
 			}
 			if err != nil {
-				*trailerMD = stream.Trailer()
-				return err
+				// TODO: Setup for next call
+				return handleStreamEnd(stream, trailerMD, valuesBuffer, err)
 			}
 
 			resp := eqResp.GetResponse()
@@ -614,61 +672,69 @@ func (bs *BoundStatement) execute(ctx context.Context, f func(ResultRow) bool, m
 
 			partialResultSet := results.Results
 			if partialResultSet.GetReset_() {
-				batchBuffer.Reset()
-				values = []*btpb.Value{}
+				ongoingResultBatch.Reset()
 			}
 
-			var currBatch []byte
+			var batchData []byte
 			if partialResultSet.GetProtoRowsBatch() != nil {
-				currBatch = partialResultSet.GetProtoRowsBatch().GetBatchData()
-				batchBuffer.Write(currBatch)
+				batchData = partialResultSet.GetProtoRowsBatch().GetBatchData()
+				ongoingResultBatch.Write(batchData)
 			}
+
+			// If `resume_token` is non-empty and any data has been received since the
+			// last one, BatchChecksum is guaranteed to be non-empty. In other words, clients
+			// may assume that a batch will never cross a `resume_token` boundary.
+			//
+			// It is an error otherwise
+			if partialResultSet.GetResumeToken() != nil && ongoingResultBatch.Len() != 0 && partialResultSet.BatchChecksum == nil {
+				return errors.New("bigtable: received resumeToken with buffered data and no checksum")
+			}
+
 			// TODO: Validate checksum if exists
 			var protoRows *btpb.ProtoRows
 			if partialResultSet.BatchChecksum != nil {
-				currBatchCheckSum := crc32.Checksum(currBatch, crc32cTable)
+				// Current batch is now complete
+
+				// Validate checksum
+				currBatchCheckSum := crc32.Checksum(batchData, crc32cTable)
 				_ = currBatchCheckSum
-				checksum := crc32.Checksum(batchBuffer.Bytes(), crc32cTable)
+				checksum := crc32.Checksum(ongoingResultBatch.Bytes(), crc32cTable)
 				// if *partialResultSet.BatchChecksum != checksum {
 				// 	return errors.New("bigtable: batch checksum mismatch")
 				// }
 				_ = checksum
 
-				// Parse buffer
+				// Parse the batch
 				protoRows = new(btpb.ProtoRows)
-				if err := proto.Unmarshal(batchBuffer.Bytes(), protoRows); err != nil {
+				if err := proto.Unmarshal(ongoingResultBatch.Bytes(), protoRows); err != nil {
 					return err
 				}
-				batchBuffer.Reset()
+				valuesBuffer = append(valuesBuffer, protoRows.GetValues()...)
 
-				// TODO: Remove this
-				printValues(protoRows.GetValues())
-
-				values = append(values, protoRows.GetValues()...)
+				// Prepare to receive next batch of results
+				ongoingResultBatch.Reset()
 			}
-			if partialResultSet.GetResumeToken() != nil ||
-				len(partialResultSet.GetResumeToken()) != 0 {
-				req.ResumeToken = partialResultSet.GetResumeToken()
-				if batchBuffer.Len() != 0 {
-					return errors.New("bigtable: received resumeToken with buffered data and no checksum")
-				}
+			if partialResultSet.GetResumeToken() != nil {
+				// Values can be yielded to the caller
+
+				// Save ResumeToken for subsequent requests
+				resumeToken = partialResultSet.GetResumeToken()
 
 				if bs.ps.metadata == nil || bs.ps.metadata.GetProtoSchema() == nil {
 					// TODO: Maybe do not return error and try to prepare again
 					return errors.New("bigtable: metadata missing")
 				}
 				cols := bs.ps.metadata.GetProtoSchema().GetColumns()
-				// printColumns(cols) // TODO: Remove this
 
 				// Parse rows
-				for len(values) != 0 {
-					completeRow := []*btpb.Value{}
+				for len(valuesBuffer) != 0 {
+					var completeRowValues []*btpb.Value
+					completeRowValues, valuesBuffer = valuesBuffer[0:len(cols)], valuesBuffer[len(cols):]
+
 					rr := ResultRow{
-						values:   completeRow,
+						values:   completeRowValues,
 						metadata: bs.ps.metadata,
 					}
-					rr.values, values = values[0:len(cols)], values[len(cols):]
-
 					continueReading := f(rr)
 					if !continueReading {
 						// Cancel and drain stream.
@@ -676,7 +742,7 @@ func (bs *BoundStatement) execute(ctx context.Context, f func(ResultRow) bool, m
 						for {
 							proto.Reset(eqResp)
 							if err := stream.RecvMsg(eqResp); err != nil {
-								*trailerMD = stream.Trailer()
+								handleStreamEnd(stream, trailerMD, valuesBuffer, err)
 								// The stream has ended. We don't return an error
 								// because the caller has intentionally interrupted the scan.
 								return nil
@@ -684,10 +750,8 @@ func (bs *BoundStatement) execute(ctx context.Context, f func(ResultRow) bool, m
 						}
 					}
 				}
-
 			}
 		}
-		return nil
 	})
 	if err != nil {
 		return err
