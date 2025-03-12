@@ -30,7 +30,8 @@ import (
 var int64ReflectType = reflect.TypeOf(int64(0))
 
 // SQLType represents the type of data that can be used to query Cloud Bigtable.
-// It is based on the GoogleSQL standard.
+// It is heavily based on the GoogleSQL standard to help maintain
+// familiarity and consistency across products and features.
 type SQLType interface {
 	// Used while preparing the query
 	typeProto() (*btpb.Type, error)
@@ -41,7 +42,7 @@ type SQLType interface {
 	isValidArrayElemType() bool
 }
 
-// BytesSQLType represents a slice of bytes.
+// BytesSQLType represents a slice of bytes
 type BytesSQLType struct{}
 
 func (s BytesSQLType) isValidArrayElemType() bool {
@@ -158,7 +159,7 @@ func (s Int64SQLType) typeProto() (*btpb.Type, error) {
 	}, nil
 }
 
-// Float32SQLType represents a 32-bit floating-point number.
+// Float32SQLType represents a 32-bit floating-point number
 type Float32SQLType struct{}
 
 func (s Float32SQLType) isValidArrayElemType() bool {
@@ -195,7 +196,7 @@ func (s Float32SQLType) typeProto() (*btpb.Type, error) {
 	}, nil
 }
 
-// Float64SQLType represents a 64-bit floating-point number.
+// Float64SQLType represents a 64-bit floating-point number
 type Float64SQLType struct{}
 
 func (s Float64SQLType) isValidArrayElemType() bool {
@@ -233,7 +234,7 @@ func (s Float64SQLType) typeProto() (*btpb.Type, error) {
 	}, nil
 }
 
-// BoolSQLType represents a boolean.
+// BoolSQLType represents a boolean
 type BoolSQLType struct{}
 
 func (s BoolSQLType) isValidArrayElemType() bool {
@@ -271,7 +272,7 @@ func (s BoolSQLType) typeProto() (*btpb.Type, error) {
 	}, nil
 }
 
-// TimestampSQLType represents a point in time.
+// TimestampSQLType represents a point in time
 type TimestampSQLType struct{}
 
 func (s TimestampSQLType) isValidArrayElemType() bool {
@@ -309,7 +310,7 @@ func (s TimestampSQLType) typeProto() (*btpb.Type, error) {
 	}, nil
 }
 
-// DateSQLType represents a calendar date.
+// DateSQLType represents a calendar date
 type DateSQLType struct{}
 
 func (s DateSQLType) isValidArrayElemType() bool {
@@ -347,7 +348,7 @@ func (s DateSQLType) typeProto() (*btpb.Type, error) {
 	}, nil
 }
 
-// ArraySQLType represents an ordered list of elements of a given type.
+// ArraySQLType represents an ordered list of elements of a given type
 type ArraySQLType struct {
 	ElemType SQLType
 }
