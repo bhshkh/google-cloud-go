@@ -20,17 +20,18 @@ import (
 	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 )
 
-// SQLType represents the type of data that can be used to query Cloud Bigtable.
-// It is based on the GoogleSQL standard.
-type SQLType interface {
+// SqlType represents the type of data that can be used to query Cloud Bigtable.
+// It is heavily based on the GoogleSQL standard to help maintain
+// familiarity and consistency across products and features.
+type SqlType interface {
 	// Used while preparing the query
 	typeProto() *btpb.Type
 }
 
-// BytesSQLType represents a slice of bytes.
-type BytesSQLType struct{}
+// BytesSqlType represents a slice of bytes
+type BytesSqlType struct{}
 
-func (s BytesSQLType) typeProto() *btpb.Type {
+func (s BytesSqlType) typeProto() *btpb.Type {
 	return &btpb.Type{
 		Kind: &btpb.Type_BytesType{
 			BytesType: &btpb.Type_Bytes{},
@@ -38,11 +39,11 @@ func (s BytesSQLType) typeProto() *btpb.Type {
 	}
 }
 
-// StringSQLType represents a string.
-type StringSQLType struct {
+// StringSqlType represents a string
+type StringSqlType struct {
 }
 
-func (s StringSQLType) typeProto() *btpb.Type {
+func (s StringSqlType) typeProto() *btpb.Type {
 	return &btpb.Type{
 		Kind: &btpb.Type_StringType{
 			StringType: &btpb.Type_String{},
@@ -50,10 +51,10 @@ func (s StringSQLType) typeProto() *btpb.Type {
 	}
 }
 
-// Int64SQLType represents an 8-byte integer.
-type Int64SQLType struct{}
+// Int64SqlType represents an 8-byte integer.
+type Int64SqlType struct{}
 
-func (s Int64SQLType) typeProto() *btpb.Type {
+func (s Int64SqlType) typeProto() *btpb.Type {
 	return &btpb.Type{
 		Kind: &btpb.Type_Int64Type{
 			Int64Type: &btpb.Type_Int64{},
@@ -61,10 +62,10 @@ func (s Int64SQLType) typeProto() *btpb.Type {
 	}
 }
 
-// Float32SQLType represents a 32-bit floating-point number.
-type Float32SQLType struct{}
+// Float32SqlType represents a 32-bit floating-point number
+type Float32SqlType struct{}
 
-func (s Float32SQLType) typeProto() *btpb.Type {
+func (s Float32SqlType) typeProto() *btpb.Type {
 	return &btpb.Type{
 		Kind: &btpb.Type_Float32Type{
 			Float32Type: &btpb.Type_Float32{},
@@ -72,10 +73,10 @@ func (s Float32SQLType) typeProto() *btpb.Type {
 	}
 }
 
-// Float64SQLType represents a 64-bit floating-point number.
-type Float64SQLType struct{}
+// Float64SqlType represents a 64-bit floating-point number
+type Float64SqlType struct{}
 
-func (s Float64SQLType) typeProto() *btpb.Type {
+func (s Float64SqlType) typeProto() *btpb.Type {
 	return &btpb.Type{
 		Kind: &btpb.Type_Float64Type{
 			Float64Type: &btpb.Type_Float64{},
@@ -83,10 +84,10 @@ func (s Float64SQLType) typeProto() *btpb.Type {
 	}
 }
 
-// BoolSQLType represents a boolean.
-type BoolSQLType struct{}
+// BoolSqlType represents a boolean
+type BoolSqlType struct{}
 
-func (s BoolSQLType) typeProto() *btpb.Type {
+func (s BoolSqlType) typeProto() *btpb.Type {
 	return &btpb.Type{
 		Kind: &btpb.Type_BoolType{
 			BoolType: &btpb.Type_Bool{},
@@ -94,10 +95,10 @@ func (s BoolSQLType) typeProto() *btpb.Type {
 	}
 }
 
-// TimestampSQLType represents a point in time.
-type TimestampSQLType struct{}
+// TimestampSqlType represents a point in time
+type TimestampSqlType struct{}
 
-func (s TimestampSQLType) typeProto() *btpb.Type {
+func (s TimestampSqlType) typeProto() *btpb.Type {
 	return &btpb.Type{
 		Kind: &btpb.Type_TimestampType{
 			TimestampType: &btpb.Type_Timestamp{},
@@ -105,10 +106,10 @@ func (s TimestampSQLType) typeProto() *btpb.Type {
 	}
 }
 
-// DateSQLType represents a calendar date.
-type DateSQLType struct{}
+// DateSqlType represents a calendar date
+type DateSqlType struct{}
 
-func (s DateSQLType) typeProto() *btpb.Type {
+func (s DateSqlType) typeProto() *btpb.Type {
 	return &btpb.Type{
 		Kind: &btpb.Type_DateType{
 			DateType: &btpb.Type_Date{},
@@ -116,12 +117,12 @@ func (s DateSQLType) typeProto() *btpb.Type {
 	}
 }
 
-// ArraySQLType represents an ordered list of elements of a given type.
-type ArraySQLType struct {
-	ElemType SQLType
+// ArraySqlType represents an ordered list of elements of a given type
+type ArraySqlType struct {
+	ElemType SqlType
 }
 
-func (s ArraySQLType) typeProto() *btpb.Type {
+func (s ArraySqlType) typeProto() *btpb.Type {
 	return &btpb.Type{
 		Kind: &btpb.Type_ArrayType{
 			ArrayType: &btpb.Type_Array{
