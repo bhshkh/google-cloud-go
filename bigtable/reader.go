@@ -47,6 +47,30 @@ type ReadItem struct {
 	Labels      []string
 }
 
+func (r Row) String() string {
+	str := "{"
+
+	for cf, items := range r {
+		str += "    \n    " + cf + ":[]{"
+		for _, item := range items {
+			str += "\n" + item.String()
+		}
+		str += "\n    },"
+	}
+	str += "\n}"
+	return str
+}
+
+func (ri ReadItem) String() string {
+	return "        ReadItem{" +
+		"\n            Row:       " + ri.Row + "," +
+		"\n            Column:    " + ri.Column + "," +
+		"\n            Timestamp: " + ri.Timestamp.Time().String() + "," +
+		"\n            Value:     " + string(ri.Value) + "," +
+		"\n            Labels:    " + fmt.Sprint(ri.Labels) +
+		"\n        },"
+}
+
 // The current state of the read rows state machine.
 type rrState int64
 
