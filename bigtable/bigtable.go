@@ -394,7 +394,7 @@ type PreparedStatement struct {
 type PrepareOption interface {
 }
 
-func (c *Client) PrepareStatement(ctx context.Context, query string, paramTypes map[string]DataType, opts ...PrepareOption) (preparedStatement *PreparedStatement, err error) {
+func (c *Client) PrepareStatement(ctx context.Context, query string, paramTypes map[string]SQLType, opts ...PrepareOption) (preparedStatement *PreparedStatement, err error) {
 	// TODO: Move to function
 	md := metadata.Join(metadata.Pairs(
 		resourcePrefixHeader, c.fullInstanceName(),
@@ -414,7 +414,7 @@ func (c *Client) PrepareStatement(ctx context.Context, query string, paramTypes 
 	return preparedStatement, statusErr
 }
 
-func (c *Client) prepareStatement(ctx context.Context, mt *builtinMetricsTracer, query string, paramTypes map[string]DataType, opts ...PrepareOption) (*PreparedStatement, error) {
+func (c *Client) prepareStatement(ctx context.Context, mt *builtinMetricsTracer, query string, paramTypes map[string]SQLType, opts ...PrepareOption) (*PreparedStatement, error) {
 	reqParamTypes := map[string]*btpb.Type{}
 	for k, v := range paramTypes {
 		reqParamTypes[k] = v.typeProto()
@@ -491,14 +491,14 @@ func (ps *PreparedStatement) Bind(values map[string]any) (*BoundStatement, error
 		case *btpb.Type_StringType:
 			v, ok := pval.(string)
 			if !ok {
-				return nil, errors.New("bigtable: type mismatch while binding parameter " + pname + ". Expected StringDataType")
+				return nil, errors.New("bigtable: type mismatch while binding parameter " + pname + ". Expected StringSQLType")
 			}
-			sdt := NewStringDataType(v)
+			sdt := NewStringSQLType(v)
 			boundParams[pname] = sdt.dataProto()
 
 			// TODO: Compare this
 			// if wantType.Kind != *btpb.Type_StringType{} {
-			// 	return bs, errors.New("bigtable: type mismatch for parameter " + k + ". Expected StringDataType")
+			// 	return bs, errors.New("bigtable: type mismatch for parameter " + k + ". Expected StringSQLType")
 			// }
 		default:
 			return &bs, errors.New("bigtable: unsupported type for parameter " + pname)
@@ -517,7 +517,7 @@ type ResultRow struct {
 	colNameToIndex map[string]int
 }
 
-func kindToGoDataType(kind *btpb.Type, value *btpb.Value) (any, error) {
+func kindToGoSQLType(kind *btpb.Type, value *btpb.Value) (any, error) {
 	switch t := kind.GetKind().(type) {
 
 	case *btpb.Type_BytesType:
@@ -547,7 +547,7 @@ func kindToGoDataType(kind *btpb.Type, value *btpb.Value) (any, error) {
 		structVal := map[string]any{}
 		for i, f := range t.StructType.GetFields() {
 			var err error
-			structVal[f.GetFieldName()], err = kindToGoDataType(f.GetType(), valArray[i])
+			structVal[f.GetFieldName()], err = kindToGoSQLType(f.GetType(), valArray[i])
 			if err != nil {
 				return nil, err
 			}
@@ -560,7 +560,7 @@ func kindToGoDataType(kind *btpb.Type, value *btpb.Value) (any, error) {
 
 		for i, val := range value.GetArrayValue().GetValues() {
 			var err error
-			kindToGoDataType(t.ArrayType.GetElementType(), val)
+			kindToGoSQLType(t.ArrayType.GetElementType(), val)
 		}
 	case *btpb.Type_MapType:
 	default:
@@ -579,7 +579,7 @@ func (rr ResultRow) Data() (map[string]any, error) {
 			continue
 		}
 		var err error
-		data[col.Name], err = kindToGoDataType(col.GetType(), rr.values[i])
+		data[col.Name], err = kindToGoSQLType(col.GetType(), rr.values[i])
 		if err != nil {
 			return nil, err
 		}
