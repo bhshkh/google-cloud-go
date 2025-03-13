@@ -477,6 +477,8 @@ type BoundStatement struct {
 //
 // time.Time, civil.Date, array, slice and nil
 func (ps *PreparedStatement) Bind(values map[string]any) (*BoundStatement, error) {
+	bs := BoundStatement{
+		ps:     ps,
 		params: map[string]*btpb.Value{},
 	}
 
@@ -515,7 +517,7 @@ type ResultRow struct {
 	colNameToIndex map[string]int
 }
 
-func kindToGoDataType(kind *btpb.Type, value *btpb.Value) (any, error) {
+func kindToGoSQLType(kind *btpb.Type, value *btpb.Value) (any, error) {
 	switch t := kind.GetKind().(type) {
 
 	case *btpb.Type_BytesType:
@@ -545,7 +547,7 @@ func kindToGoDataType(kind *btpb.Type, value *btpb.Value) (any, error) {
 		structVal := map[string]any{}
 		for i, f := range t.StructType.GetFields() {
 			var err error
-			structVal[f.GetFieldName()], err = kindToGoDataType(f.GetType(), valArray[i])
+			structVal[f.GetFieldName()], err = kindToGoSQLType(f.GetType(), valArray[i])
 			if err != nil {
 				return nil, err
 			}
@@ -558,7 +560,7 @@ func kindToGoDataType(kind *btpb.Type, value *btpb.Value) (any, error) {
 
 		for i, val := range value.GetArrayValue().GetValues() {
 			var err error
-			kindToGoDataType(t.ArrayType.GetElementType(), val)
+			kindToGoSQLType(t.ArrayType.GetElementType(), val)
 		}
 	case *btpb.Type_MapType:
 	default:
@@ -577,7 +579,7 @@ func (rr ResultRow) Data() (map[string]any, error) {
 			continue
 		}
 		var err error
-		data[col.Name], err = kindToGoDataType(col.GetType(), rr.values[i])
+		data[col.Name], err = kindToGoSQLType(col.GetType(), rr.values[i])
 		if err != nil {
 			return nil, err
 		}
