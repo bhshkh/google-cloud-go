@@ -41,6 +41,11 @@ func (s BytesSQLType) typeProto() *btpb.Type {
 
 // StringSQLType represents a string
 type StringSQLType struct {
+	value string
+}
+
+func NewStringSQLType(value string) StringSQLType {
+	return StringSQLType{value: value}
 }
 
 func (s StringSQLType) typeProto() *btpb.Type {

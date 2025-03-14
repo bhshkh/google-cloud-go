@@ -761,13 +761,6 @@ func (bs *BoundStatement) execute(ctx context.Context, f func(ResultRow) bool, m
 	return nil
 }
 
-func printColumns(cols []*btpb.ColumnMetadata) {
-	for i, col := range cols {
-		jsonBytes, _ := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true, Multiline: true}.Marshal(col)
-		fmt.Printf("cols: i: %+v, col: %+v\n", i, string(jsonBytes))
-	}
-}
-
 func (ti *tableImpl) ReadRows(ctx context.Context, arg RowSet, f func(Row) bool, opts ...ReadOption) error {
 	return ti.Table.ReadRows(ctx, arg, f, opts...)
 }
