@@ -22,7 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Type wraps the protobuf representation of a schema type. See the protobuf definition
+// Type wraps the protobuf representation of a type. See the protobuf definition
 // for more details on types.
 type Type interface {
 	proto() *btapb.Type
