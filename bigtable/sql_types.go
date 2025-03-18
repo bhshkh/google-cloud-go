@@ -118,6 +118,14 @@ func (s StringSQLType) typeProto() (*btpb.Type, error) {
 	}, nil
 }
 
+func (s StringSQLType) dataProto() *btpb.Value {
+	return &btpb.Value{
+		Kind: &btpb.Value_StringValue{
+			StringValue: s.value,
+		},
+	}
+}
+
 // Int64SQLType represents an 8-byte integer.
 type Int64SQLType struct{}
 
@@ -350,6 +358,7 @@ func (s DateSQLType) typeProto() (*btpb.Type, error) {
 // ArraySQLType represents an ordered list of elements of a given type.
 type ArraySQLType struct {
 	ElemType SQLType
+	values   []SQLType
 }
 
 func (s ArraySQLType) isValidArrayElemType() bool {

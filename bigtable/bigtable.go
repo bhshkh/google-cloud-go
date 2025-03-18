@@ -39,6 +39,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/option/internaloption"
 	gtransport "google.golang.org/api/transport/grpc"
+	"google.golang.org/genproto/googleapis/type/date"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -512,40 +513,53 @@ func (ps *PreparedStatement) Bind(values map[string]any) (*BoundStatement, error
 }
 
 type ResultRow struct {
-	values         []*btpb.Value
-	metadata       *btpb.ResultSetMetadata
-	colNameToIndex map[string]int
+	values   []*btpb.Value
+	metadata *btpb.ResultSetMetadata
 }
 
-func kindToGoSQLType(kind *btpb.Type, value *btpb.Value) (any, error) {
-	switch t := kind.GetKind().(type) {
-
+// Converts
+// btpb.Type_BytesType to []bytes
+// btpb.Type_StringType to string
+// btpb.Type_Int64Type to int64
+// btpb.Type_Float32Type to float32
+// btpb.Type_Float64Type to float64
+// btpb.Type_BoolType to bool
+// btpb.Type_TimestampType to *time.Time
+// btpb.Type_DateType to *date.Date
+// btpb.Type_StructType to struct
+// btpb.Type_ArrayType to slice
+// btpb.Type_MapType to map
+func kindToGoSQLType(colMetadataType *btpb.Type, colValue *btpb.Value) (any, error) {
+	switch colKind := colMetadataType.GetKind().(type) {
 	case *btpb.Type_BytesType:
-		return value.GetBytesValue(), nil
+		return colValue.GetBytesValue(), nil
 	case *btpb.Type_StringType:
-		return value.GetStringValue(), nil
+		return colValue.GetStringValue(), nil
 	case *btpb.Type_Int64Type:
-		return value.GetIntValue(), nil
+		return colValue.GetIntValue(), nil
 	case *btpb.Type_Float32Type:
-		return float32(value.GetFloatValue()), nil
+		return float32(colValue.GetFloatValue()), nil
 	case *btpb.Type_Float64Type:
-		return value.GetFloatValue(), nil
+		return colValue.GetFloatValue(), nil
 	case *btpb.Type_BoolType:
-		return value.GetBoolValue(), nil
+		return colValue.GetBoolValue(), nil
 	case *btpb.Type_TimestampType:
-		return value.GetTimestampValue(), nil
-	case *btpb.Type_DateType:
-		return value.GetDateValue(), nil
-	// case *btpb.Type_AggregateType:
-	// 	return value.GetAggregateValue(), nil
-	case *btpb.Type_StructType:
-		if t.StructType == nil || value == nil || value.GetArrayValue() == nil || value.GetArrayValue().GetValues() == nil {
+		tsVal := colValue.GetTimestampValue()
+		if tsVal == nil {
 			return nil, nil
 		}
-		valArray := value.GetArrayValue().GetValues()
+		timeVal := tsVal.AsTime()
+		return &timeVal, nil
+	case *btpb.Type_DateType:
+		return colValue.GetDateValue(), nil
+	case *btpb.Type_StructType:
+		if colKind.StructType == nil || colValue == nil || colValue.GetArrayValue() == nil || colValue.GetArrayValue().GetValues() == nil {
+			return nil, nil
+		}
+		valArray := colValue.GetArrayValue().GetValues()
 
 		structVal := map[string]any{}
-		for i, f := range t.StructType.GetFields() {
+		for i, f := range colKind.StructType.GetFields() {
 			var err error
 			structVal[f.GetFieldName()], err = kindToGoSQLType(f.GetType(), valArray[i])
 			if err != nil {
@@ -554,17 +568,152 @@ func kindToGoSQLType(kind *btpb.Type, value *btpb.Value) (any, error) {
 		}
 		return structVal, nil
 	case *btpb.Type_ArrayType:
-		if t.ArrayType == nil || t.ArrayType.GetElementType() == nil {
+		if colKind.ArrayType == nil || colKind.ArrayType.GetElementType() == nil {
 			return nil, nil
 		}
 
-		for i, val := range value.GetArrayValue().GetValues() {
-			var err error
-			kindToGoSQLType(t.ArrayType.GetElementType(), val)
+		// elemType cannot be an array
+		elemType := colKind.ArrayType.GetElementType()
+		switch elemKind := elemType.GetKind().(type) {
+		case *btpb.Type_BytesType:
+			arr := [][]byte{}
+			for _, pbElemVal := range colValue.GetArrayValue().GetValues() {
+				val, err := kindToGoSQLType(elemType, pbElemVal)
+				if err != nil {
+					return nil, err
+				}
+				byteVal, ok := val.([]byte)
+				if !ok {
+					return nil, errors.New("bigtable: unknown error occurred while forming response")
+				}
+				arr = append(arr, byteVal)
+			}
+			return arr, nil
+		case *btpb.Type_StringType:
+			arr := []string{}
+			for _, pbElemVal := range colValue.GetArrayValue().GetValues() {
+				val, err := kindToGoSQLType(elemType, pbElemVal)
+				if err != nil {
+					return nil, err
+				}
+				stringVal, ok := val.(string)
+				if !ok {
+					return nil, errors.New("bigtable: unknown error occurred while forming response")
+				}
+				arr = append(arr, stringVal)
+			}
+			return arr, nil
+		case *btpb.Type_Int64Type:
+			arr := []int64{}
+			for _, pbElemVal := range colValue.GetArrayValue().GetValues() {
+				val, err := kindToGoSQLType(elemType, pbElemVal)
+				if err != nil {
+					return nil, err
+				}
+				int64Val, ok := val.(int64)
+				if !ok {
+					return nil, errors.New("bigtable: unknown error occurred while forming response")
+				}
+				arr = append(arr, int64Val)
+			}
+			return arr, nil
+		case *btpb.Type_Float32Type:
+			arr := []float32{}
+			for _, pbElemVal := range colValue.GetArrayValue().GetValues() {
+				val, err := kindToGoSQLType(elemType, pbElemVal)
+				if err != nil {
+					return nil, err
+				}
+				float32Val, ok := val.(float32)
+				if !ok {
+					return nil, errors.New("bigtable: unknown error occurred while forming response")
+				}
+				arr = append(arr, float32Val)
+			}
+			return arr, nil
+		case *btpb.Type_Float64Type:
+			arr := []float64{}
+			for _, pbElemVal := range colValue.GetArrayValue().GetValues() {
+				val, err := kindToGoSQLType(elemType, pbElemVal)
+				if err != nil {
+					return nil, err
+				}
+				float64Val, ok := val.(float64)
+				if !ok {
+					return nil, errors.New("bigtable: unknown error occurred while forming response")
+				}
+				arr = append(arr, float64Val)
+			}
+			return arr, nil
+		case *btpb.Type_BoolType:
+			arr := []bool{}
+			for _, pbElemVal := range colValue.GetArrayValue().GetValues() {
+				val, err := kindToGoSQLType(elemType, pbElemVal)
+				if err != nil {
+					return nil, err
+				}
+				boolVal, ok := val.(bool)
+				if !ok {
+					return nil, errors.New("bigtable: unknown error occurred while forming response")
+				}
+				arr = append(arr, boolVal)
+			}
+			return arr, nil
+		case *btpb.Type_TimestampType:
+			arr := []*time.Time{}
+			for _, pbElemVal := range colValue.GetArrayValue().GetValues() {
+				val, err := kindToGoSQLType(elemType, pbElemVal)
+				if err != nil {
+					return nil, err
+				}
+				timeVal, ok := val.(*time.Time)
+				if !ok {
+					return nil, errors.New("bigtable: unknown error occurred while forming response")
+				}
+				arr = append(arr, timeVal)
+			}
+			return arr, nil
+		case *btpb.Type_DateType:
+			arr := []*date.Date{}
+			for _, pbElemVal := range colValue.GetArrayValue().GetValues() {
+				val, err := kindToGoSQLType(elemType, pbElemVal)
+				if err != nil {
+					return nil, err
+				}
+				dateVal, ok := val.(*date.Date)
+				if !ok {
+					return nil, errors.New("bigtable: unknown error occurred while forming response")
+				}
+				arr = append(arr, dateVal)
+			}
+			return arr, nil
+		case *btpb.Type_StructType:
+			arr := []map[string]any{}
+			for _, pbElemVal := range colValue.GetArrayValue().GetValues() {
+				val, err := kindToGoSQLType(elemType, pbElemVal)
+				if err != nil {
+					return nil, err
+				}
+				mapVal, ok := val.(map[string]any)
+				if !ok {
+					return nil, errors.New("bigtable: unknown error occurred while forming response")
+				}
+				arr = append(arr, mapVal)
+			}
+			return arr, nil
+		case *btpb.Type_MapType:
+			if elemKind.MapType == nil {
+				return nil, nil
+			}
+			keyType := elemKind.MapType.GetKeyType()
+			valType := elemKind.MapType.GetValueType()
+
+		default:
+			return nil, errors.New("bigtable: unsupported type " + colMetadataType.String() + " for column " + colValue.String())
 		}
 	case *btpb.Type_MapType:
 	default:
-		return nil, errors.New("bigtable: unsupported type " + kind.String() + " for column " + value.String())
+		return nil, errors.New("bigtable: unsupported type " + colMetadataType.String() + " for column " + colValue.String())
 	}
 
 	return nil, nil
@@ -573,6 +722,8 @@ func kindToGoSQLType(kind *btpb.Type, value *btpb.Value) (any, error) {
 func (rr ResultRow) Data() (map[string]any, error) {
 	data := map[string]any{}
 	for i, col := range rr.metadata.GetProtoSchema().GetColumns() {
+		jsonBytes, _ := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true, Multiline: true}.Marshal(col)
+		fmt.Printf("values: i: %+v, val: %+v\n", i, string(jsonBytes))
 
 		if col.GetType() == nil || col.GetType().GetKind() == nil {
 			data[col.Name] = nil
