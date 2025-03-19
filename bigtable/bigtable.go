@@ -462,7 +462,6 @@ func (c *Client) prepareStatement(ctx context.Context, mt *builtinMetricsTracer,
 	}
 
 	return &PreparedStatement{
-
 		c:             c,
 		metadata:      res.Metadata,
 		preparedQuery: res.PreparedQuery,
@@ -508,11 +507,6 @@ func (ps *PreparedStatement) Bind(values map[string]any) (*BoundStatement, error
 		if !found {
 			return &bs, errors.New("bigtable: parameter " + paramName + " not bound in prepared statement")
 		}
-		pbVal, err := sqlVal.dataProto()
-		if err != nil {
-			return nil, err
-		}
-		boundParams[paramName] = pbVal
 	}
 
 	return &BoundStatement{
@@ -1972,9 +1966,6 @@ func (t *Table) doApplyBulk(ctx context.Context, entryErrs []*entryErr, headerMD
 		req.AuthorizedViewName = t.c.fullAuthorizedViewName(t.table, t.authorizedView)
 	}
 
-	jsonBytes, _ := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true, Multiline: true}.Marshal(req)
-	// fmt.Printf("MutateRows req: %+v\n", string(jsonBytes))
-	_ = jsonBytes
 	stream, err := t.c.client.MutateRows(ctx, req)
 	if err != nil {
 		_, topLevelErr = convertToGrpcStatusErr(err)
