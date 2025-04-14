@@ -74,7 +74,7 @@ type Client struct {
 	appProfile               string
 	metricsTracerFactory     *builtinMetricsTracerFactory
 	disableRetryInfo         bool
-	retryOptions             []gax.CallOption
+	dataRetryOptions         []gax.CallOption
 	executeQueryRetryOptions []gax.CallOption
 }
 
@@ -90,11 +90,6 @@ type ClientConfig struct {
 	//
 	// TODO: support user provided meter provider
 	MetricsProvider MetricsProvider
-
-	// If true, library uses default retry options.
-	// If false, library bases retry decision and back off time on
-	// server returned RetryInfo value.
-	DisableRetryInfo bool
 }
 
 // MetricsProvider is a wrapper for built in metrics meter provider
@@ -165,12 +160,17 @@ func NewClientWithConfig(ctx context.Context, project, instance string, config C
 		return nil, err
 	}
 
-	retryOptions := retryInfoRetryOptions
-	if config.DisableRetryInfo {
-		retryOptions = noRetryInfoRetryOptions
-	}
+	disableRetryInfo := false
+
+	// If DISABLE_RETRY_INFO=1, library uses default retry options.
+	// If DISABLE_RETRY_INFO=0 or empty string or undefined, library bases retry decision and back off time on
+	// server returned RetryInfo value.
+	disableRetryInfoVal := os.Getenv("DISABLE_RETRY_INFO")
+	disableRetryInfo = disableRetryInfoVal != "" && disableRetryInfoVal != "0"
+	dataRetryOptions := retryInfoDataRetryOptions
 	executeQueryRetryOptions := retryInfoExecuteQueryRetryOptions
-	if config.DisableRetryInfo {
+	if disableRetryInfo {
+		dataRetryOptions = noRetryInfoDataRetryOptions
 		executeQueryRetryOptions = noRetryInfoExecuteQueryRetryOptions
 	}
 	return &Client{
@@ -180,8 +180,8 @@ func NewClientWithConfig(ctx context.Context, project, instance string, config C
 		instance:                 instance,
 		appProfile:               config.AppProfile,
 		metricsTracerFactory:     metricsTracerFactory,
-		disableRetryInfo:         config.DisableRetryInfo,
-		retryOptions:             retryOptions,
+		disableRetryInfo:         disableRetryInfo,
+		dataRetryOptions:         dataRetryOptions,
 		executeQueryRetryOptions: executeQueryRetryOptions,
 	}, nil
 }
@@ -205,13 +205,13 @@ var (
 		Max:        2 * time.Second,
 		Multiplier: 1.2,
 	}
-	noRetryInfoRetryOptions             = newRetryOptions(noRetryInfoRetry)
-	noRetryInfoExecuteQueryRetryOptions = newRetryOptions(noRetryInfoExecuteQueryRetry)
-	retryInfoRetryOptions               = newRetryOptions(retryInfoRetry)
-	retryInfoExecuteQueryRetryOptions   = newRetryOptions(retryInfoExecuteQueryRetry)
+	noRetryInfoDataRetryOptions         = newDataRetryOptions(noRetryInfoDataRetry)
+	noRetryInfoExecuteQueryRetryOptions = newDataRetryOptions(noRetryInfoExecuteQueryRetry)
+	retryInfoDataRetryOptions           = newDataRetryOptions(retryInfoDataRetry)
+	retryInfoExecuteQueryRetryOptions   = newDataRetryOptions(retryInfoExecuteQueryRetry)
 )
 
-func newRetryOptions(retryFn func(*gax.Backoff, error) (time.Duration, bool)) []gax.CallOption {
+func newDataRetryOptions(retryFn func(*gax.Backoff, error) (time.Duration, bool)) []gax.CallOption {
 	return []gax.CallOption{
 		gax.WithRetry(func() gax.Retryer {
 			return &bigtableRetryer{
@@ -221,29 +221,23 @@ func newRetryOptions(retryFn func(*gax.Backoff, error) (time.Duration, bool)) []
 		}),
 	}
 }
-func retryInfoRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
-	fmt.Println("Entering retryInfoRetry")
-	defer fmt.Println("Exiting retryInfoRetry")
+func retryInfoDataRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
 	apiErr, ok := apierror.FromError(err)
 	if ok && apiErr != nil && apiErr.Details().RetryInfo != nil {
 		// If there is RetryInfo, retry the error irrespective of the error code
 
 		// get pause duration from backoff and discard it.
 		// When server stops sending retry info, the backoff won't start from Initial duration
-		fmt.Printf("Retrying.... %v\n", apiErr.Details().RetryInfo.GetRetryDelay().AsDuration())
 		return apiErr.Details().RetryInfo.GetRetryDelay().AsDuration(), true
 	}
 	// If theres is no RetryInfo, fallback to defaultRetryOptions i.e. retrying idempotent retry codes and retryable INTERNAL error messages
-	return noRetryInfoRetry(backoff, err)
+	return noRetryInfoDataRetry(backoff, err)
 }
 
-func noRetryInfoRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
-	fmt.Println("Entering noRetryInfoRetry")
-	defer fmt.Println("Exiting noRetryInfoRetry")
+func noRetryInfoDataRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
 	// Similar to gax.OnCodes but shares the backoff with INTERNAL retry messages check
 	st, ok := status.FromError(err)
 	if !ok {
-		fmt.Println("Not retrying....")
 		return 0, false
 	}
 	c := st.Code()
@@ -251,10 +245,8 @@ func noRetryInfoRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
 	if isIdempotent ||
 		(status.Code(err) == codes.Internal && containsAny(err.Error(), retryableInternalErrMsgs)) {
 		pause := backoff.Pause()
-		fmt.Printf("Retrying.... %v\n", pause)
 		return pause, true
 	}
-	fmt.Println("Not retrying....")
 	return 0, false
 }
 
@@ -262,18 +254,18 @@ func noRetryInfoExecuteQueryRetry(backoff *gax.Backoff, err error) (time.Duratio
 	if isQueryExpiredViolation(err) {
 		return backoff.Pause(), true
 	}
-	return noRetryInfoRetry(backoff, err)
+	return noRetryInfoDataRetry(backoff, err)
 }
 
 func retryInfoExecuteQueryRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
-	pause, shouldRetry := retryInfoRetry(backoff, err)
+	pause, shouldRetry := retryInfoDataRetry(backoff, err)
 	if shouldRetry {
 		return pause, true
 	}
 	if isQueryExpiredViolation(err) {
 		return backoff.Pause(), true
 	}
-	return noRetryInfoRetry(backoff, err)
+	return noRetryInfoDataRetry(backoff, err)
 }
 
 func isQueryExpiredViolation(err error) bool {
@@ -570,7 +562,7 @@ func (c *Client) prepareStatement(ctx context.Context, mt *builtinMetricsTracer,
 		var err error
 		res, err = c.client.PrepareQuery(ctx, req, grpc.Header(headerMD), grpc.Trailer(trailerMD))
 		return err
-	}, c.retryOptions...)
+	}, c.dataRetryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -1116,7 +1108,7 @@ func (t *Table) readRows(ctx context.Context, arg RowSet, f func(Row) bool, mt *
 			}
 		}
 		return err
-	}, t.c.retryOptions...)
+	}, t.c.dataRetryOptions...)
 
 	return err
 }
@@ -1669,7 +1661,7 @@ func (t *Table) apply(ctx context.Context, mt *builtinMetricsTracer, row string,
 			req.AuthorizedViewName = t.c.fullAuthorizedViewName(t.table, t.authorizedView)
 		}
 		if mutationsAreRetryable(m.ops) {
-			callOptions = t.c.retryOptions
+			callOptions = t.c.dataRetryOptions
 		}
 		var res *btpb.MutateRowResponse
 		err := gaxInvokeWithRecorder(ctx, mt, "MutateRow", func(ctx context.Context, headerMD, trailerMD *metadata.MD, _ gax.CallSettings) error {
@@ -1937,7 +1929,7 @@ func (t *Table) applyGroup(ctx context.Context, group []*entryErr, opts ...Apply
 			return status.Errorf(idempotentRetryCodes[0], "Synthetic error: partial failure of ApplyBulk")
 		}
 		return nil
-	}, t.c.retryOptions...)
+	}, t.c.dataRetryOptions...)
 
 	statusCode, statusErr := convertToGrpcStatusErr(err)
 	mt.currOp.setStatus(statusCode.String())
@@ -2214,7 +2206,7 @@ func (t *Table) sampleRowKeys(ctx context.Context, mt *builtinMetricsTracer) ([]
 			sampledRowKeys = append(sampledRowKeys, key)
 		}
 		return nil
-	}, t.c.retryOptions...)
+	}, t.c.dataRetryOptions...)
 
 	return sampledRowKeys, err
 }
