@@ -38,7 +38,9 @@ import (
 	"google.golang.org/api/option"
 	gtransport "google.golang.org/api/transport/grpc"
 	"google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	field_mask "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -48,6 +50,39 @@ const adminAddr = "bigtableadmin.googleapis.com:443"
 const mtlsAdminAddr = "bigtableadmin.mtls.googleapis.com:443"
 
 var errExpiryMissing = errors.New("WithExpiry is a required option")
+var retryOptions = []gax.CallOption{
+	gax.WithRetry(func() gax.Retryer {
+		backoff := gax.Backoff{
+			Initial:    100 * time.Millisecond,
+			Max:        2 * time.Second,
+			Multiplier: 1.2,
+		}
+		return &bigtableAdminRetryer{
+			Retryer: gax.OnCodes(idempotentRetryCodes, backoff),
+			Backoff: backoff,
+		}
+	}),
+}
+
+type bigtableAdminRetryer struct {
+	alternateRetryCondition func(error) bool
+	gax.Retryer
+	gax.Backoff
+}
+
+func (r *bigtableAdminRetryer) Retry(err error) (time.Duration, bool) {
+	if (grpcstatus.Code(err) == codes.Internal && containsAny(err.Error(), retryableInternalErrMsgs)) ||
+		(r.alternateRetryCondition != nil && r.alternateRetryCondition(err)) {
+		return r.Backoff.Pause(), true
+	}
+
+	delay, shouldRetry := r.Retryer.Retry(err)
+	if !shouldRetry {
+		return 0, false
+	}
+
+	return delay, true
+}
 
 // ErrPartiallyUnavailable is returned when some locations (clusters) are
 // unavailable. Both partial results (retrieved from available locations)
@@ -217,7 +252,7 @@ func (ac *AdminClient) Tables(ctx context.Context) ([]string, error) {
 		var err error
 		res, err = ac.tClient.ListTables(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -656,7 +691,7 @@ func (ac *AdminClient) getTable(ctx context.Context, table string, view btapb.Ta
 		var err error
 		res, err = ac.tClient.GetTable(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -909,7 +944,7 @@ func (ac *AdminClient) Snapshots(ctx context.Context, cluster string) *SnapshotI
 			var err error
 			resp, err = ac.tClient.ListSnapshots(ctx, req)
 			return err
-		}, noRetryInfoRetryOptions...)
+		}, retryOptions...)
 		if err != nil {
 			return "", err
 		}
@@ -1014,7 +1049,7 @@ func (ac *AdminClient) SnapshotInfo(ctx context.Context, cluster, snapshot strin
 		var err error
 		resp, err = ac.tClient.GetSnapshot(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -1066,7 +1101,7 @@ func (ac *AdminClient) isConsistent(ctx context.Context, tableName, token string
 		var err error
 		resp, err = ac.tClient.CheckConsistency(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return false, err
 	}
@@ -1426,7 +1461,7 @@ func (iac *InstanceAdminClient) Instances(ctx context.Context) ([]*InstanceInfo,
 		var err error
 		res, err = iac.iClient.ListInstances(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -1464,7 +1499,7 @@ func (iac *InstanceAdminClient) InstanceInfo(ctx context.Context, instanceID str
 		var err error
 		res, err = iac.iClient.GetInstance(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -1740,7 +1775,7 @@ func (iac *InstanceAdminClient) Clusters(ctx context.Context, instanceID string)
 		var err error
 		res, err = iac.iClient.ListClusters(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -1788,7 +1823,7 @@ func (iac *InstanceAdminClient) GetCluster(ctx context.Context, instanceID, clus
 		var err error
 		c, err = iac.iClient.GetCluster(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -1971,7 +2006,7 @@ func (iac *InstanceAdminClient) GetAppProfile(ctx context.Context, instanceID, n
 		var err error
 		ap, err = iac.iClient.GetAppProfile(ctx, profileRequest)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -1993,7 +2028,7 @@ func (iac *InstanceAdminClient) ListAppProfiles(ctx context.Context, instanceID 
 			var err error
 			profileRes, err = iac.iClient.ListAppProfiles(ctx, listRequest)
 			return err
-		}, noRetryInfoRetryOptions...)
+		}, retryOptions...)
 		if err != nil {
 			return "", err
 		}
@@ -2383,7 +2418,7 @@ func (ac *AdminClient) Backups(ctx context.Context, cluster string) *BackupItera
 			var err error
 			resp, err = ac.tClient.ListBackups(ctx, req)
 			return err
-		}, noRetryInfoRetryOptions...)
+		}, retryOptions...)
 		if err != nil {
 			return "", err
 		}
@@ -2532,7 +2567,7 @@ func (ac *AdminClient) BackupInfo(ctx context.Context, cluster, backup string) (
 		var err error
 		resp, err = ac.tClient.GetBackup(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -2771,7 +2806,7 @@ func (ac *AdminClient) AuthorizedViewInfo(ctx context.Context, tableID, authoriz
 		var err error
 		res, err = ac.tClient.GetAuthorizedView(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 
 	if err != nil {
 		return nil, err
@@ -2805,7 +2840,7 @@ func (ac *AdminClient) AuthorizedViews(ctx context.Context, tableID string) ([]s
 		var err error
 		res, err = ac.tClient.ListAuthorizedViews(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -2912,7 +2947,7 @@ func (iac *InstanceAdminClient) LogicalViewInfo(ctx context.Context, instanceID,
 		var err error
 		res, err = iac.iClient.GetLogicalView(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 
 	if err != nil {
 		return nil, err
@@ -2932,7 +2967,7 @@ func (iac *InstanceAdminClient) LogicalViews(ctx context.Context, instanceID str
 		var err error
 		res, err = iac.iClient.ListLogicalViews(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -3041,7 +3076,7 @@ func (iac *InstanceAdminClient) MaterializedViewInfo(ctx context.Context, instan
 		var err error
 		res, err = iac.iClient.GetMaterializedView(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 
 	if err != nil {
 		return nil, err
@@ -3067,7 +3102,7 @@ func (iac *InstanceAdminClient) MaterializedViews(ctx context.Context, instanceI
 		var err error
 		res, err = iac.iClient.ListMaterializedViews(ctx, req)
 		return err
-	}, noRetryInfoRetryOptions...)
+	}, retryOptions...)
 	if err != nil {
 		return nil, err
 	}
