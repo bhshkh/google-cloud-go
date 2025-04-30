@@ -74,8 +74,8 @@ type Client struct {
 	appProfile               string
 	metricsTracerFactory     *builtinMetricsTracerFactory
 	disableRetryInfo         bool
-	retryOptions             []gax.CallOption
-	executeQueryRetryOptions []gax.CallOption
+	retryOptions             gax.CallOption
+	executeQueryRetryOptions gax.CallOption
 }
 
 // ClientConfig has configurations for the client.
@@ -210,22 +210,20 @@ var (
 	defaultExecuteQueryRetryOptions    = newRetryOptions(clientOnlyExecuteQueryRetry, false /* disableRetryInfo */)
 )
 
-func newRetryOptions(retryFn func(*gax.Backoff, error) (time.Duration, bool), disableRetryInfo bool) []gax.CallOption {
-	return []gax.CallOption{
-		gax.WithRetry(func() gax.Retryer {
-			// Create a new Backoff instance for each retryer to ensure independent state.
-			newBackoffInstance := gax.Backoff{
-				Initial:    defaultBackoff.Initial,
-				Max:        defaultBackoff.Max,
-				Multiplier: defaultBackoff.Multiplier,
-			}
-			return &bigtableRetryer{
-				baseRetryFn:      retryFn,
-				backoff:          newBackoffInstance,
-				disableRetryInfo: disableRetryInfo,
-			}
-		}),
-	}
+func newRetryOptions(retryFn func(*gax.Backoff, error) (time.Duration, bool), disableRetryInfo bool) gax.CallOption {
+	return gax.WithRetry(func() gax.Retryer {
+		// Create a new Backoff instance for each retryer to ensure independent state.
+		newBackoffInstance := gax.Backoff{
+			Initial:    defaultBackoff.Initial,
+			Max:        defaultBackoff.Max,
+			Multiplier: defaultBackoff.Multiplier,
+		}
+		return &bigtableRetryer{
+			baseRetryFn:      retryFn,
+			backoff:          newBackoffInstance,
+			disableRetryInfo: disableRetryInfo,
+		}
+	})
 }
 
 func clientOnlyRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
@@ -564,7 +562,7 @@ func (c *Client) prepareStatement(ctx context.Context, mt *builtinMetricsTracer,
 		var err error
 		res, err = c.client.PrepareQuery(ctx, req, grpc.Header(headerMD), grpc.Trailer(trailerMD))
 		return err
-	}, c.retryOptions...)
+	}, c.retryOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -906,7 +904,7 @@ func (bs *BoundStatement) execute(ctx context.Context, f func(ResultRow) bool, m
 				}
 			}
 		}
-	}, bs.ps.c.executeQueryRetryOptions...)
+	}, bs.ps.c.executeQueryRetryOptions)
 	if err != nil {
 		return err
 	}
@@ -1110,7 +1108,7 @@ func (t *Table) readRows(ctx context.Context, arg RowSet, f func(Row) bool, mt *
 			}
 		}
 		return err
-	}, t.c.retryOptions...)
+	}, t.c.retryOptions)
 
 	return err
 }
@@ -1650,7 +1648,7 @@ func (t *Table) apply(ctx context.Context, mt *builtinMetricsTracer, row string,
 		}
 	}
 
-	var callOptions []gax.CallOption
+	var callOptions gax.CallOption
 	if !m.isConditional {
 		req := &btpb.MutateRowRequest{
 			AppProfileId: t.c.appProfile,
@@ -1670,7 +1668,7 @@ func (t *Table) apply(ctx context.Context, mt *builtinMetricsTracer, row string,
 			var err error
 			res, err = t.c.client.MutateRow(ctx, req, grpc.Header(headerMD), grpc.Trailer(trailerMD))
 			return err
-		}, callOptions...)
+		}, callOptions)
 		if err == nil {
 			after(res)
 		}
@@ -1931,7 +1929,7 @@ func (t *Table) applyGroup(ctx context.Context, group []*entryErr, opts ...Apply
 			return status.Errorf(idempotentRetryCodes[0], "Synthetic error: partial failure of ApplyBulk")
 		}
 		return nil
-	}, t.c.retryOptions...)
+	}, t.c.retryOptions)
 
 	statusCode, statusErr := convertToGrpcStatusErr(err)
 	mt.currOp.setStatus(statusCode.String())
@@ -2208,7 +2206,7 @@ func (t *Table) sampleRowKeys(ctx context.Context, mt *builtinMetricsTracer) ([]
 			sampledRowKeys = append(sampledRowKeys, key)
 		}
 		return nil
-	}, t.c.retryOptions...)
+	}, t.c.retryOptions)
 
 	return sampledRowKeys, err
 }
