@@ -166,11 +166,11 @@ func NewClientWithConfig(ctx context.Context, project, instance string, config C
 	// else, library bases retry decision and back off time on server returned RetryInfo value.
 	disableRetryInfoEnv := os.Getenv("DISABLE_RETRY_INFO")
 	disableRetryInfo = disableRetryInfoEnv == "1"
-	dataRetryOptions := retryInfoRetryOptions
-	executeQueryRetryOptions := retryInfoExecuteQueryRetryOptions
+	retryOptions := defaultRetryOptions
+	executeQueryRetryOptions := defaultExecuteQueryRetryOptions
 	if disableRetryInfo {
-		dataRetryOptions = noRetryInfoRetryOptions
-		executeQueryRetryOptions = noRetryInfoExecuteQueryRetryOptions
+		retryOptions = clientOnlyRetryOptions
+		executeQueryRetryOptions = clientOnlyExecuteQueryRetryOptions
 	}
 	return &Client{
 		connPool:                 connPool,
@@ -180,7 +180,7 @@ func NewClientWithConfig(ctx context.Context, project, instance string, config C
 		appProfile:               config.AppProfile,
 		metricsTracerFactory:     metricsTracerFactory,
 		disableRetryInfo:         disableRetryInfo,
-		retryOptions:             dataRetryOptions,
+		retryOptions:             retryOptions,
 		executeQueryRetryOptions: executeQueryRetryOptions,
 	}, nil
 }
@@ -204,33 +204,31 @@ var (
 		Max:        2 * time.Second,
 		Multiplier: 1.2,
 	}
-	noRetryInfoRetryOptions             = newRetryOptions(noRetryInfoRetry)
-	noRetryInfoExecuteQueryRetryOptions = newRetryOptions(noRetryInfoExecuteQueryRetry)
-	retryInfoRetryOptions               = newRetryOptions(retryInfoRetry)
-	retryInfoExecuteQueryRetryOptions   = newRetryOptions(retryInfoExecuteQueryRetry)
+	clientOnlyRetryOptions             = newRetryOptions(clientOnlyRetry, true /* disableRetryInfo */)
+	clientOnlyExecuteQueryRetryOptions = newRetryOptions(clientOnlyExecuteQueryRetry, true /* disableRetryInfo */)
+	defaultRetryOptions                = newRetryOptions(clientOnlyRetry, false /* disableRetryInfo */)
+	defaultExecuteQueryRetryOptions    = newRetryOptions(clientOnlyExecuteQueryRetry, false /* disableRetryInfo */)
 )
 
-func newRetryOptions(retryFn func(*gax.Backoff, error) (time.Duration, bool)) []gax.CallOption {
+func newRetryOptions(retryFn func(*gax.Backoff, error) (time.Duration, bool), disableRetryInfo bool) []gax.CallOption {
 	return []gax.CallOption{
 		gax.WithRetry(func() gax.Retryer {
+			// Create a new Backoff instance for each retryer to ensure independent state.
+			newBackoffInstance := gax.Backoff{
+				Initial:    defaultBackoff.Initial,
+				Max:        defaultBackoff.Max,
+				Multiplier: defaultBackoff.Multiplier,
+			}
 			return &bigtableRetryer{
-				retry:   retryFn,
-				backoff: &defaultBackoff,
+				baseRetryFn:      retryFn,
+				backoff:          newBackoffInstance,
+				disableRetryInfo: disableRetryInfo,
 			}
 		}),
 	}
 }
-func retryInfoRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
-	apiErr, ok := apierror.FromError(err)
-	if ok && apiErr != nil && apiErr.Details().RetryInfo != nil {
-		// If there is RetryInfo, retry the error irrespective of the error code
-		return apiErr.Details().RetryInfo.GetRetryDelay().AsDuration(), true
-	}
-	// If theres is no RetryInfo, fallback to defaultRetryOptions i.e. retrying idempotent retry codes and retryable INTERNAL error messages
-	return noRetryInfoRetry(backoff, err)
-}
 
-func noRetryInfoRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
+func clientOnlyRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
 	// Similar to gax.OnCodes but shares the backoff with INTERNAL retry messages check
 	st, ok := status.FromError(err)
 	if !ok {
@@ -246,22 +244,11 @@ func noRetryInfoRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
 	return 0, false
 }
 
-func noRetryInfoExecuteQueryRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
+func clientOnlyExecuteQueryRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
 	if isQueryExpiredViolation(err) {
 		return backoff.Pause(), true
 	}
-	return noRetryInfoRetry(backoff, err)
-}
-
-func retryInfoExecuteQueryRetry(backoff *gax.Backoff, err error) (time.Duration, bool) {
-	pause, shouldRetry := retryInfoRetry(backoff, err)
-	if shouldRetry {
-		return pause, true
-	}
-	if isQueryExpiredViolation(err) {
-		return backoff.Pause(), true
-	}
-	return noRetryInfoRetry(backoff, err)
+	return clientOnlyRetry(backoff, err)
 }
 
 func isQueryExpiredViolation(err error) bool {
@@ -276,16 +263,39 @@ func isQueryExpiredViolation(err error) bool {
 	return false
 }
 
-// bigtableRetryer extends the generic gax Retryer, but also checks
-// error messages to check if operation can be retried
-//
-// Retry is made if :
-// - error code is one of the `idempotentRetryCodes` OR
-// - error code is internal and error message is one of the `retryableInternalErrMsgs` OR
-// - alternateRetryCondition returns true.
+// bigtableRetryer implements the gax.Retryer interface. It manages retry decisions,
+// incorporating server-sent RetryInfo if enabled, and client-side exponential backoff.
+// It specifically handles resetting the client-side backoff to its initial state if
+// RetryInfo was previously used for an operation and then stops being provided.
 type bigtableRetryer struct {
-	retry   func(*gax.Backoff, error) (time.Duration, bool)
-	backoff *gax.Backoff
+	baseRetryFn               func(*gax.Backoff, error) (time.Duration, bool)
+	backoff                   gax.Backoff
+	disableRetryInfo          bool // If true, this retryer will process server-sent RetryInfo.
+	wasLastDelayFromRetryInfo bool // true if the previous retry delay for this operation was from RetryInfo.
+
+}
+
+// Retry determines if an operation should be retried and for how long to wait.
+func (r *bigtableRetryer) Retry(err error) (time.Duration, bool) {
+	if !r.disableRetryInfo {
+		apiErr, ok := apierror.FromError(err)
+		if ok && apiErr != nil && apiErr.Details().RetryInfo != nil {
+			// RetryInfo is present in the current error. Use its delay.
+			r.wasLastDelayFromRetryInfo = true
+			return apiErr.Details().RetryInfo.GetRetryDelay().AsDuration(), true
+		}
+
+		if r.wasLastDelayFromRetryInfo {
+			r.backoff = gax.Backoff{
+				Initial:    r.backoff.Initial,
+				Max:        r.backoff.Max,
+				Multiplier: r.backoff.Multiplier,
+			}
+		}
+		r.wasLastDelayFromRetryInfo = false
+	}
+
+	return r.baseRetryFn(&r.backoff, err)
 }
 
 func containsAny(str string, substrs []string) bool {
@@ -295,10 +305,6 @@ func containsAny(str string, substrs []string) bool {
 		}
 	}
 	return false
-}
-
-func (r *bigtableRetryer) Retry(err error) (time.Duration, bool) {
-	return r.retry(r.backoff, err)
 }
 
 func init() {
@@ -616,12 +622,12 @@ func (ps *PreparedStatement) Bind(values map[string]any) (*BoundStatement, error
 
 func (ps *PreparedStatement) refreshIfInvalid(ctx context.Context) error {
 	/*
-		| valid | validEarly | behaviour            |
-		|-------|------------|----------------------|
-		| true  |   true     | nil                 |
-		| false |   true     | impossible condition |
-		| true  |   false    | async refresh token  |
-		| false |   false    | sync refresh token   |
+	   | valid | validEarly | behaviour            |
+	   |-------|------------|----------------------|
+	   | true  |   true     | nil                 |
+	   | false |   true     | impossible condition |
+	   | true  |   false    | async refresh token  |
+	   | false |   false    | sync refresh token   |
 	*/
 	valid, validEarly := ps.valid()
 	if validEarly {
