@@ -162,8 +162,7 @@ func NewClientWithConfig(ctx context.Context, project, instance string, config C
 
 	disableRetryInfo := false
 
-	// If DISABLE_RETRY_INFO=1, library uses default retry options.
-	// else, library bases retry decision and back off time on server returned RetryInfo value.
+	// If DISABLE_RETRY_INFO=1, library does not base retry decision and back off time on server returned RetryInfo value.
 	disableRetryInfoEnv := os.Getenv("DISABLE_RETRY_INFO")
 	disableRetryInfo = disableRetryInfoEnv == "1"
 	retryOption := defaultRetryOption
@@ -263,7 +262,7 @@ func isQueryExpiredViolation(err error) bool {
 
 // bigtableRetryer implements the gax.Retryer interface. It manages retry decisions,
 // incorporating server-sent RetryInfo if enabled, and client-side exponential backoff.
-// It specifically handles resetting the client-side backoff to its initial state if
+// It specifically handles reseting the client-side backoff to its initial state if
 // RetryInfo was previously used for an operation and then stops being provided.
 type bigtableRetryer struct {
 	baseRetryFn               func(*gax.Backoff, error) (time.Duration, bool)
