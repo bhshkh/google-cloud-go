@@ -1647,7 +1647,7 @@ func (t *Table) apply(ctx context.Context, mt *builtinMetricsTracer, row string,
 		}
 	}
 
-	var callOptions gax.CallOption
+	var callOptions []gax.CallOption
 	if !m.isConditional {
 		req := &btpb.MutateRowRequest{
 			AppProfileId: t.c.appProfile,
@@ -1660,14 +1660,14 @@ func (t *Table) apply(ctx context.Context, mt *builtinMetricsTracer, row string,
 			req.AuthorizedViewName = t.c.fullAuthorizedViewName(t.table, t.authorizedView)
 		}
 		if mutationsAreRetryable(m.ops) {
-			callOptions = t.c.retryOption
+			callOptions = append(callOptions, t.c.retryOption)
 		}
 		var res *btpb.MutateRowResponse
 		err := gaxInvokeWithRecorder(ctx, mt, "MutateRow", func(ctx context.Context, headerMD, trailerMD *metadata.MD, _ gax.CallSettings) error {
 			var err error
 			res, err = t.c.client.MutateRow(ctx, req, grpc.Header(headerMD), grpc.Trailer(trailerMD))
 			return err
-		}, callOptions)
+		}, callOptions...)
 		if err == nil {
 			after(res)
 		}
