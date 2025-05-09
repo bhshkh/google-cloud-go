@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	stat "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
@@ -917,6 +918,47 @@ func (s *goTestProxyServer) ReadModifyWriteRow(ctx context.Context, req *pb.Read
 
 	res.Row = rp
 	return res, nil
+}
+
+func (s *goTestProxyServer) ExecuteQuery(ctx context.Context, req *pb.ExecuteQueryRequest) (*pb.ExecuteQueryResult, error) {
+	s.clientsLock.RLock()
+	btc, err := s.client(req.ClientId)
+	s.clientsLock.RUnlock()
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate request exists
+	pbReq := req.GetRequest()
+	if pbReq == nil {
+		log.Printf("missing inner request: %v\n", pbReq)
+		return nil, stat.Error(codes.InvalidArgument, "request to ExecuteQuery() is missing inner request")
+	}
+
+	ctx, cancel := btc.timeout(ctx)
+	defer cancel()
+
+	// proxy request to library request
+	// 1. Prepare
+	paramTypes := map[string]bigtable.SQLType{}
+	pbParams := pbReq.GetParams()
+	for name, pbValue := range pbParams {
+		paramTypes[name], err = pbTypeToSQLType(pbValue.Type)
+		if err != nil {
+			return &pb.ExecuteQueryResult{Status: statusFromError(err)}, nil
+		}
+	}
+	ps, err := btc.c.PrepareStatement(ctx, pbReq.GetQuery(), paramTypes)
+	if err != nil {
+		return &pb.ExecuteQueryResult{Status: statusFromError(err)}, nil
+	}
+
+	_ = ps
+	// ps.Bind()
+	res := &pb.ExecuteQueryResult{}
+
+	return res, status.Errorf(codes.Unimplemented, "method ExecuteQuery not implemented")
 }
 
 func (s *goTestProxyServer) mustEmbedUnimplementedCloudBigtableV2TestProxyServer() {}
