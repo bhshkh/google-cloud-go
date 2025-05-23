@@ -467,6 +467,7 @@ func TestIntegration_Create(t *testing.T) {
 	doc := integrationColl(t).NewDoc()
 	start := time.Now()
 	h := testHelper{t}
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{doc}) })
 	wr := h.mustCreate(doc, integrationTestMap)
 	end := time.Now()
 	checkTimeBetween(t, wr.UpdateTime, start, end)
@@ -474,17 +475,16 @@ func TestIntegration_Create(t *testing.T) {
 	codeEq(t, "Create on a present doc", codes.AlreadyExists, err)
 	// OK to create an empty document.
 	emptyDoc := integrationColl(t).NewDoc()
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{emptyDoc}) })
 	_, err = emptyDoc.Create(ctx, map[string]interface{}{})
 	codeEq(t, "Create empty doc", codes.OK, err)
-	t.Cleanup(func() {
-		deleteDocuments([]*DocumentRef{doc, emptyDoc})
-	})
 }
 
 func TestIntegration_Get(t *testing.T) {
 	ctx := context.Background()
 	doc := integrationColl(t).NewDoc()
 	h := testHelper{t}
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{doc}) })
 	h.mustCreate(doc, integrationTestMap)
 	ds := h.mustGet(doc)
 	if ds.CreateTime != ds.UpdateTime {
@@ -504,6 +504,7 @@ func TestIntegration_Get(t *testing.T) {
 
 	emptyDoc := integrationColl(t).NewDoc()
 	empty := map[string]interface{}{}
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{emptyDoc}) })
 	h.mustCreate(emptyDoc, empty)
 	ds = h.mustGet(emptyDoc)
 	if ds.CreateTime != ds.UpdateTime {
@@ -521,10 +522,6 @@ func TestIntegration_Get(t *testing.T) {
 	if ds.ReadTime.IsZero() {
 		t.Error("got zero read time")
 	}
-
-	t.Cleanup(func() {
-		deleteDocuments([]*DocumentRef{doc, emptyDoc})
-	})
 }
 
 func TestIntegration_GetAll(t *testing.T) {
@@ -541,6 +538,7 @@ func TestIntegration_GetAll(t *testing.T) {
 			h.mustCreate(doc, getAll{N: i})
 		}
 	}
+	t.Cleanup(func() { deleteDocuments(docRefs) })
 	docSnapshots, err := iClient.GetAll(ctx, docRefs)
 	if err != nil {
 		t.Fatal(err)
@@ -569,9 +567,6 @@ func TestIntegration_GetAll(t *testing.T) {
 			t.Errorf("%d: got zero read time", i)
 		}
 	}
-	t.Cleanup(func() {
-		deleteDocuments(docRefs)
-	})
 }
 
 type runWithOptionsTestcase struct {
@@ -641,14 +636,11 @@ func TestIntegration_GetAll_WithRunOptions(t *testing.T) {
 	coll := integrationColl(t)
 	ctx := context.Background()
 	testcases, wantDocRefs := getRunWithOptionsTestcases(t)
+	t.Cleanup(func() { deleteDocuments(wantDocRefs) })
 	snapshotRefIDs := []string{}
 	for _, wantRef := range wantDocRefs {
 		snapshotRefIDs = append(snapshotRefIDs, wantRef.ID)
 	}
-
-	defer func() {
-		deleteDocuments(wantDocRefs)
-	}()
 
 	for _, testcase := range testcases {
 		t.Run(testcase.desc, func(t *testing.T) {
@@ -734,14 +726,12 @@ func TestIntegration_Query_WithRunOptions(t *testing.T) {
 func TestIntegration_Add(t *testing.T) {
 	start := time.Now()
 	docRef, wr, err := integrationColl(t).Add(context.Background(), integrationTestMap)
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{docRef}) })
 	if err != nil {
 		t.Fatal(err)
 	}
 	end := time.Now()
 	checkTimeBetween(t, wr.UpdateTime, start, end)
-	t.Cleanup(func() {
-		deleteDocuments([]*DocumentRef{docRef})
-	})
 }
 
 func TestIntegration_Set(t *testing.T) {
@@ -750,6 +740,7 @@ func TestIntegration_Set(t *testing.T) {
 	ctx := context.Background()
 
 	// Set Should be able to create a new doc.
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{doc}) })
 	doc := coll.NewDoc()
 	wr1 := h.mustSet(doc, integrationTestMap)
 	// Calling Set on the doc completely replaces the contents.
@@ -829,15 +820,12 @@ func TestIntegration_Set(t *testing.T) {
 	// Writing an empty doc with MergeAll should create the doc.
 	doc2 := coll.NewDoc()
 	want = map[string]interface{}{}
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{doc, doc2}) })
 	h.mustSet(doc2, want, MergeAll)
 	ds = h.mustGet(doc2)
 	if got := ds.Data(); !testEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
-
-	t.Cleanup(func() {
-		deleteDocuments([]*DocumentRef{doc, doc2})
-	})
 }
 
 func TestIntegration_Delete(t *testing.T) {
@@ -869,6 +857,7 @@ func TestIntegration_Update(t *testing.T) {
 	doc := integrationColl(t).NewDoc()
 	h := testHelper{t}
 
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{doc}) })
 	h.mustCreate(doc, integrationTestMap)
 	fpus := []Update{
 		{Path: "bool", Value: false},
@@ -910,9 +899,6 @@ func TestIntegration_Update(t *testing.T) {
 	if !testEqual(got, want) {
 		t.Errorf("got\n%#v\nwant\n%#v", got, want)
 	}
-	t.Cleanup(func() {
-		deleteDocuments([]*DocumentRef{doc})
-	})
 }
 
 func TestIntegration_Collections(t *testing.T) {
@@ -920,6 +906,7 @@ func TestIntegration_Collections(t *testing.T) {
 	h := testHelper{t}
 
 	doc := integrationColl(t).NewDoc()
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{doc}) })
 	got, err := doc.Collections(ctx).GetAll()
 	if err != nil {
 		t.Fatal(err)
@@ -941,9 +928,6 @@ func TestIntegration_Collections(t *testing.T) {
 	if !testEqual(got, want) {
 		t.Errorf("got\n%#v\nwant\n%#v", got, want)
 	}
-	t.Cleanup(func() {
-		deleteDocuments([]*DocumentRef{doc})
-	})
 }
 
 func TestIntegration_ServerTimestamp(t *testing.T) {
@@ -963,6 +947,7 @@ func TestIntegration_ServerTimestamp(t *testing.T) {
 	}
 	h := testHelper{t}
 	doc := integrationColl(t).NewDoc()
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{doc}) })
 	// Bound times of the RPC, with some slack for clock skew.
 	start := time.Now()
 	h.mustCreate(doc, data)
@@ -982,9 +967,6 @@ func TestIntegration_ServerTimestamp(t *testing.T) {
 	if g, w := got.E, got.C; !testEqual(g, w) {
 		t.Errorf(`E = %s, want equal to C (%s)`, g, w)
 	}
-	t.Cleanup(func() {
-		deleteDocuments([]*DocumentRef{doc})
-	})
 }
 
 func TestIntegration_MergeServerTimestamp(t *testing.T) {
@@ -992,6 +974,7 @@ func TestIntegration_MergeServerTimestamp(t *testing.T) {
 	h := testHelper{t}
 
 	// Create a doc with an ordinary field "a" and a ServerTimestamp field "b".
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{doc}) })
 	h.mustSet(doc, map[string]interface{}{"a": 1, "b": ServerTimestamp})
 	docSnap := h.mustGet(doc)
 	data1 := docSnap.Data()
@@ -1009,9 +992,6 @@ func TestIntegration_MergeServerTimestamp(t *testing.T) {
 	if !t1.Before(t2) {
 		t.Errorf("got t1=%s, t2=%s; want t1 before t2", t1, t2)
 	}
-	t.Cleanup(func() {
-		deleteDocuments([]*DocumentRef{doc})
-	})
 }
 
 func TestIntegration_MergeNestedServerTimestamp(t *testing.T) {
@@ -1020,6 +1000,7 @@ func TestIntegration_MergeNestedServerTimestamp(t *testing.T) {
 
 	// Create a doc with an ordinary field "a" a ServerTimestamp field "b",
 	// and a second ServerTimestamp field "c.d".
+	t.Cleanup(func() { deleteDocuments([]*DocumentRef{doc}) })
 	h.mustSet(doc, map[string]interface{}{
 		"a": 1,
 		"b": ServerTimestamp,
@@ -1048,9 +1029,6 @@ func TestIntegration_MergeNestedServerTimestamp(t *testing.T) {
 	if !t1.Before(t2) {
 		t.Errorf("got t1=%s, t2=%s; want t1 before t2", t1, t2)
 	}
-	t.Cleanup(func() {
-		deleteDocuments([]*DocumentRef{doc})
-	})
 }
 
 func TestIntegration_WriteBatch(t *testing.T) {
@@ -2109,7 +2087,7 @@ func TestIntegration_Serialize_Deserialize_WatchQuery(t *testing.T) {
 	collID := collectionIDs.New()
 	ctx := context.Background()
 	client := integrationClient(t)
-
+	t.Cleanup(func() { deleteCollection(context.Background(), client.Collection(collID)) })
 	partitionedQueries, err := client.CollectionGroup(collID).GetPartitionedQueries(ctx, 10)
 	h.failIfNotNil(err)
 
@@ -2290,6 +2268,7 @@ func TestIntegration_MissingDocs(t *testing.T) {
 
 	t.Cleanup(func() {
 		deleteDocuments([]*DocumentRef{dr2})
+		deleteCollection(context.Background(), coll)
 	})
 }
 
@@ -2329,6 +2308,10 @@ func TestIntegration_CollectionGroupQueries(t *testing.T) {
 	if snaps[1].Ref.ID != "should-be-found-2" {
 		t.Fatalf("expected ID 'should-be-found-2', got %s", snaps[1].Ref.ID)
 	}
+	t.Cleanup(func() {
+		deleteCollection(context.Background(), cr1)
+		deleteCollection(context.Background(), cr3)
+	})
 }
 
 func codeEq(t *testing.T, msg string, code codes.Code, err error) {
@@ -2509,6 +2492,7 @@ func TestIntegration_ColGroupRefPartitions(t *testing.T) {
 
 	t.Cleanup(func() {
 		deleteDocuments([]*DocumentRef{doc})
+		deleteCollection(context.Background(), coll)
 	})
 
 }
@@ -2589,6 +2573,11 @@ func TestIntegration_ColGroupRefPartitionsLarge(t *testing.T) {
 	if got, want := totalCount, documentCount; got != want {
 		t.Errorf("Unexpected number of documents across partitions: got %d, want %d", got, want)
 	}
+	t.Cleanup(func() {
+		// Ensure the collection created for this test is cleaned up.
+		// The defer deleteBatch.Commit(ctx) and t.Cleanup for snapshots handle documents.
+		deleteCollection(context.Background(), coll)
+	})
 }
 
 func TestIntegration_NewClientWithDatabase(t *testing.T) {
@@ -3365,7 +3354,8 @@ func TestIntegration_FindNearest(t *testing.T) {
 
 				// Compare expected and actual results length
 				if len(gotDocs) != len(tc.wantBeans) {
-					t.Fatalf("Expected %v results, got %d", len(tc.wantBeans), len(gotDocs))
+					r.Errorf("Expected %v results, got %d", len(tc.wantBeans), len(gotDocs))
+					return
 				}
 
 				// Compare results
