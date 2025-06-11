@@ -33,7 +33,6 @@ import (
 
 	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	"cloud.google.com/go/internal/testutil"
-	"cloud.google.com/go/monitoring/apiv3/v2/monitoringpb"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -305,6 +304,7 @@ func TestNewBuiltinMetricsTracerFactory(t *testing.T) {
 }
 
 func TestConnectivityErrorCountWithInterceptor(t *testing.T) {
+	fmt.Println("\n\nTestConnectivityErrorCountWithInterceptor")
 	ctx := context.Background()
 	project := "test-project"
 	instance := "test-instance"
@@ -338,13 +338,17 @@ func TestConnectivityErrorCountWithInterceptor(t *testing.T) {
 		createExporterOptions = origCreateExporterOptions
 	}()
 
-	// Setup fake Bigtable server that returns Unavailable for the first three ReadRows calls
+	// Setup fake Bigtable server that returns Unavailable for the first ReadRows call,
+	// and a non-retriable error on the second to stop the retry loop.
 	var attemptCount int32
 	serverStreamInterceptor := func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if strings.HasSuffix(info.FullMethod, "ReadRows") {
-			if atomic.AddInt32(&attemptCount, 1) <= 3 {
+			currentAttempt := atomic.AddInt32(&attemptCount, 1)
+			if currentAttempt == 1 {
 				return status.Error(codes.Unavailable, "Mock Unavailable error for connectivity test")
 			}
+			// This non-retriable error will stop the client's retry loop.
+			return status.Error(codes.Internal, "non-retriable error")
 		}
 		return handler(srv, ss)
 	}
@@ -359,64 +363,47 @@ func TestConnectivityErrorCountWithInterceptor(t *testing.T) {
 	// Pop out any old requests from the monitoring server
 	monitoringServer.CreateServiceTimeSeriesRequests()
 
-	// Perform read rows operation. The first three attempts will fail, but the fourth will succeed.
+	// Perform read rows operation. The first attempt will fail with Unavailable,
+	// the second with Internal. The overall operation will fail with Internal.
 	err = tbl.ReadRows(ctx, NewRange("a", "z"), func(r Row) bool { return true })
-	if err != nil {
-		t.Fatalf("ReadRows: got error %v, want nil", err)
+	if err == nil {
+		t.Fatal("ReadRows: got nil error, want an error")
+	}
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("ReadRows: got error code %v, want %v", status.Code(err), codes.Internal)
 	}
 
-	// Poll the mock server until we get the expected number of connectivity errors.
-	var gotCreateTSCalls []*monitoringpb.CreateTimeSeriesRequest
+	// Wait for the single metric export batch that occurs after the operation completes.
+	if err := monitoringServer.waitForRequests(ctx, 1, 5*time.Second); err != nil {
+		t.Fatalf("Timed out waiting for metrics to be exported: %v", err)
+	}
+
+	gotCreateTSCalls := monitoringServer.CreateServiceTimeSeriesRequests()
+
 	var totalConnectivityErrors int64
-	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	for {
-		// Fetch all available requests from the mock server
-		gotCreateTSCalls = append(gotCreateTSCalls, monitoringServer.CreateServiceTimeSeriesRequests()...)
-		totalConnectivityErrors = 0
-		for _, call := range gotCreateTSCalls {
-			for _, ts := range call.TimeSeries {
-				if strings.HasSuffix(ts.Metric.Type, metricNameConnErrCount) {
-					for _, point := range ts.Points {
-						totalConnectivityErrors += point.GetValue().GetInt64Value()
-					}
-				}
-			}
-		}
-
-		if totalConnectivityErrors >= 3 {
-			break
-		}
-
-		select {
-		case <-checkCtx.Done():
-			t.Fatalf("Timed out waiting for metrics. Got %d errors, want 3.", totalConnectivityErrors)
-		case <-time.After(200 * time.Millisecond):
-			// Continue polling
-		}
-	}
-
-	// Validate the final aggregated metrics
-	if totalConnectivityErrors != 3 {
-		t.Errorf("Metric %s: got count %d, want 3", metricNameConnErrCount, totalConnectivityErrors)
-	}
-
-	foundMetric := false
+	foundConnectivityErrorMetric := false
 	for _, call := range gotCreateTSCalls {
 		for _, ts := range call.TimeSeries {
 			if strings.HasSuffix(ts.Metric.Type, metricNameConnErrCount) {
-				foundMetric = true
-				// The status label for a connectivity error metric should be the code of that error
-				if val := ts.Metric.Labels[metricLabelKeyStatus]; val != codes.Unavailable.String() {
-					t.Errorf("Metric %s: label %s: got %s, want %s", metricNameConnErrCount, metricLabelKeyStatus, val, codes.Unavailable.String())
+				foundConnectivityErrorMetric = true
+				// The status label reflects the status of the final attempt in the operation.
+				if val := ts.Metric.Labels[metricLabelKeyStatus]; val != codes.Internal.String() {
+					t.Errorf("Metric %s: label %s: got %s, want %s", metricNameConnErrCount, metricLabelKeyStatus, val, codes.Internal.String())
+				}
+				for _, point := range ts.Points {
+					totalConnectivityErrors += point.GetValue().GetInt64Value()
 				}
 			}
 		}
 	}
 
-	if !foundMetric {
-		t.Errorf("Metric %s was not found in exported metrics.", metricNameConnErrCount)
+	if !foundConnectivityErrorMetric {
+		t.Fatalf("Metric %s was not found in exported metrics. Exported calls: %+v", metricNameConnErrCount, gotCreateTSCalls)
+	}
+
+	// Both the retriable Unavailable and the final non-retriable Internal error contribute to the count.
+	if totalConnectivityErrors != 2 {
+		t.Errorf("Metric %s: got count %d, want 2", metricNameConnErrCount, totalConnectivityErrors)
 	}
 }
 

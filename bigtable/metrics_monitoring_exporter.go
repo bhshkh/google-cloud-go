@@ -113,6 +113,7 @@ func (me *monitoringExporter) Shutdown(ctx context.Context) error {
 
 // Export exports OpenTelemetry Metrics to Google Cloud Monitoring.
 func (me *monitoringExporter) Export(ctx context.Context, rm *otelmetricdata.ResourceMetrics) error {
+	fmt.Println("Exporter: Export called")
 	select {
 	case <-me.shutdown:
 		return wrapMetricsError(errShutdown)
@@ -166,6 +167,9 @@ func (me *monitoringExporter) recordToMetricAndMonitoredResourcePbs(metrics otel
 		Labels: map[string]string{},
 	}
 	labels := make(map[string]string)
+	if metrics.Name == "connectivity_error_count" {
+		fmt.Printf("Exporter: metrics.Name: %v\n", metrics.Name)
+	}
 	addAttributes := func(attr *attribute.Set) {
 		iter := attr.Iter()
 		for iter.Next() {
@@ -175,9 +179,15 @@ func (me *monitoringExporter) recordToMetricAndMonitoredResourcePbs(metrics otel
 			if _, isResLabel := monitoredResLabelsSet[labelKey]; isResLabel {
 				// Add labels to monitored resource
 				mr.Labels[labelKey] = kv.Value.Emit()
+				if labelKey == metricLabelKeyStatus && metrics.Name == "connectivity_error_count" {
+					fmt.Printf("Exporter: In if labelKey: %v, mr.Labels[labelKey]: %+v\n", labelKey, mr.Labels[labelKey])
+				}
 			} else {
 				// Add labels to metric
 				labels[labelKey] = kv.Value.Emit()
+				if labelKey == metricLabelKeyStatus && metrics.Name == "connectivity_error_count" {
+					fmt.Printf("Exporter: In else labelKey: %v, labels[labelKey] : %+v\n", labelKey, labels[labelKey])
+				}
 
 			}
 		}
