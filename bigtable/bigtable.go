@@ -2281,7 +2281,6 @@ func gaxInvokeWithRecorder(ctx context.Context, mt *builtinMetricsTracer, method
 
 			// Set attempt status
 			statusCode, _ := convertToGrpcStatusErr(err)
-			fmt.Println("\nSetting attempt status to " + statusCode.String())
 			mt.currOp.currAttempt.setStatus(statusCode.String())
 
 			// Get location attributes from metadata and set it in tracer
@@ -2296,7 +2295,6 @@ func gaxInvokeWithRecorder(ctx context.Context, mt *builtinMetricsTracer, method
 			mt.currOp.currAttempt.setServerLatency(serverLatency)
 
 			// Record attempt specific metrics
-			fmt.Println("calling recordAttemptCompletion")
 			recordAttemptCompletion(mt)
 			return err
 		}
@@ -2320,9 +2318,7 @@ func recordAttemptCompletion(mt *builtinMetricsTracer) {
 	mt.instrumentAttemptLatencies.Record(mt.ctx, elapsedTime, metric.WithAttributes(attemptLatAttrs...))
 
 	// Record server_latencies and connectivity_error_count
-	fmt.Println("Getting connErrCountAttrs")
 	connErrCountAttrs, _ := mt.toOtelMetricAttrs(metricNameConnErrCount)
-	fmt.Printf("connErrCountAttrs: %+v\n", connErrCountAttrs)
 	serverLatAttrs, _ := mt.toOtelMetricAttrs(metricNameServerLatencies)
 	if mt.currOp.currAttempt.serverLatencyErr == nil {
 		mt.instrumentServerLatencies.Record(mt.ctx, mt.currOp.currAttempt.serverLatency, metric.WithAttributes(serverLatAttrs...))

@@ -420,9 +420,6 @@ func (tf *builtinMetricsTracerFactory) createBuiltinMetricsTracer(ctx context.Co
 // to OpenTelemetry attributes format,
 // - combines these with common client attributes and returns
 func (mt *builtinMetricsTracer) toOtelMetricAttrs(metricName string) ([]attribute.KeyValue, error) {
-	if metricName == "connectivity_error_count" {
-		fmt.Println("In toOtelMetricAttrs: " + metricName)
-	}
 	// Create attribute key value pairs for attributes common to all metricss
 	attrKeyValues := []attribute.KeyValue{
 		attribute.String(metricLabelKeyMethod, mt.method),
@@ -445,14 +442,8 @@ func (mt *builtinMetricsTracer) toOtelMetricAttrs(metricName string) ([]attribut
 		return attrKeyValues, fmt.Errorf("unable to create attributes list for unknown metric: %v", metricName)
 	}
 
-	if metricName == "connectivity_error_count" {
-		fmt.Println("Setting status to " + mt.currOp.status)
-	}
 	status := mt.currOp.status
 	if mDetails.recordedPerAttempt {
-		if metricName == "connectivity_error_count" {
-			fmt.Println("Inside mDetails.recordedPerAttempt. Setting status to " + mt.currOp.currAttempt.status)
-		}
 		status = mt.currOp.currAttempt.status
 	}
 

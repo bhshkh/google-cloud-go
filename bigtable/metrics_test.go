@@ -304,20 +304,19 @@ func TestNewBuiltinMetricsTracerFactory(t *testing.T) {
 }
 
 func TestConnectivityErrorCountWithInterceptor(t *testing.T) {
-	fmt.Println("\n\nTestConnectivityErrorCountWithInterceptor")
 	ctx := context.Background()
 	project := "test-project"
 	instance := "test-instance"
 	appProfile := "test-app-profile"
 
-	// Reduce sampling period to reduce test run time
+	// Increase sampling period to simulate potential delays
 	origSamplePeriod := defaultSamplePeriod
-	defaultSamplePeriod = 100 * time.Millisecond // Faster sampling for this test
+	defaultSamplePeriod = 500 * time.Millisecond
 	defer func() {
 		defaultSamplePeriod = origSamplePeriod
 	}()
 
-	// Setup mock monitoring server with request waiting capability
+	// Setup mock monitoring server
 	monitoringServer, err := NewMetricTestServer()
 	if err != nil {
 		t.Fatalf("Error setting up metrics test server: %v", err)
@@ -360,7 +359,7 @@ func TestConnectivityErrorCountWithInterceptor(t *testing.T) {
 		t.Fatalf("setupFakeServer error: got: %v, want: nil", gotErr)
 	}
 
-	// Pop out any old requests from the monitoring server
+	// Pop out any old requests from the monitoring server to ensure a clean state.
 	monitoringServer.CreateServiceTimeSeriesRequests()
 
 	// Perform read rows operation. The first attempt will fail with Unavailable,
@@ -373,37 +372,62 @@ func TestConnectivityErrorCountWithInterceptor(t *testing.T) {
 		t.Fatalf("ReadRows: got error code %v, want %v", status.Code(err), codes.Internal)
 	}
 
-	// Wait for the single metric export batch that occurs after the operation completes.
-	if err := monitoringServer.waitForRequests(ctx, 1, 5*time.Second); err != nil {
-		t.Fatalf("Timed out waiting for metrics to be exported: %v", err)
-	}
+	// Poll for metrics until expected conditions are met or timeout.
+	var cumulativeTotalConnectivityErrors int64
+	cumulativeStatusesFound := make(map[string]bool)
+	foundConnectivityErrorMetric := false // To ensure the metric type is seen at all.
 
-	gotCreateTSCalls := monitoringServer.CreateServiceTimeSeriesRequests()
+	pollDuration := 5 * time.Second
+	pollInterval := 200 * time.Millisecond
+	deadline := time.Now().Add(pollDuration)
 
-	var totalConnectivityErrors int64
-	foundConnectivityErrorMetric := false
-	for _, call := range gotCreateTSCalls {
-		for _, ts := range call.TimeSeries {
-			if strings.HasSuffix(ts.Metric.Type, metricNameConnErrCount) {
-				foundConnectivityErrorMetric = true
-				// The status label reflects the status of the final attempt in the operation.
-				if val := ts.Metric.Labels[metricLabelKeyStatus]; val != codes.Internal.String() {
-					t.Errorf("Metric %s: label %s: got %s, want %s", metricNameConnErrCount, metricLabelKeyStatus, val, codes.Internal.String())
-				}
-				for _, point := range ts.Points {
-					totalConnectivityErrors += point.GetValue().GetInt64Value()
+	for time.Now().Before(deadline) {
+		newlyFetchedBatches := monitoringServer.CreateServiceTimeSeriesRequests()
+		for _, call := range newlyFetchedBatches {
+			for _, ts := range call.TimeSeries {
+				if strings.HasSuffix(ts.Metric.Type, metricNameConnErrCount) {
+					foundConnectivityErrorMetric = true // Mark that we've seen the metric type
+					status := ts.Metric.Labels[metricLabelKeyStatus]
+					cumulativeStatusesFound[status] = true
+					for _, point := range ts.Points {
+						cumulativeTotalConnectivityErrors += point.GetValue().GetInt64Value()
+					}
 				}
 			}
 		}
+
+		if len(cumulativeStatusesFound) == 2 &&
+			cumulativeStatusesFound[codes.Unavailable.String()] &&
+			cumulativeStatusesFound[codes.Internal.String()] &&
+			cumulativeTotalConnectivityErrors == 2 {
+			break // Metrics are as expected
+		}
+
+		time.Sleep(pollInterval)
 	}
 
+	// Final assertions after polling.
 	if !foundConnectivityErrorMetric {
-		t.Fatalf("Metric %s was not found in exported metrics. Exported calls: %+v", metricNameConnErrCount, gotCreateTSCalls)
+		// If no connectivity_error_count metrics were ever found after polling.
+		// CreateServiceTimeSeriesRequests called multiple times, so pass the last known set (which would be empty if none found)
+		// or indicate it was empty.
+		allRequests := monitoringServer.CreateServiceTimeSeriesRequests() // Get any remaining, though buffer should be empty if loop ran.
+		t.Fatalf("Metric %s was not found in exported metrics after polling. All received calls: %+v", metricNameConnErrCount, allRequests)
+	}
+
+	if !cumulativeStatusesFound[codes.Unavailable.String()] {
+		t.Errorf("Metric %s: status %s was not found after polling", metricNameConnErrCount, codes.Unavailable.String())
+	}
+	if !cumulativeStatusesFound[codes.Internal.String()] {
+		t.Errorf("Metric %s: status %s was not found after polling", metricNameConnErrCount, codes.Internal.String())
 	}
 
 	// Both the retriable Unavailable and the final non-retriable Internal error contribute to the count.
-	if totalConnectivityErrors != 2 {
-		t.Errorf("Metric %s: got count %d, want 2", metricNameConnErrCount, totalConnectivityErrors)
+	// Each error type (Unavailable, Internal) should be reported once with a value of 1.
+	if cumulativeTotalConnectivityErrors != 2 {
+		// Get all requests seen during polling for debugging, if condition not met.
+		// For simplicity, the error message will just show the final counts.
+		t.Errorf("Metric %s: got cumulative count %d, want 2 after polling.", metricNameConnErrCount, cumulativeTotalConnectivityErrors)
 	}
 }
 
