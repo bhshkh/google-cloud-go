@@ -66,6 +66,7 @@ const (
 	// Metric units
 	metricUnitMS    = "ms"
 	metricUnitCount = "1"
+	maxAttrsLen     = 12 // Monitored resource labels +  Metric labels
 )
 
 // These are effectively constant, but for testing purposes they are mutable
@@ -403,8 +404,9 @@ func (tf *builtinMetricsTracerFactory) createBuiltinMetricsTracer(ctx context.Co
 // to OpenTelemetry attributes format,
 // - combines these with common client attributes and returns
 func (mt *builtinMetricsTracer) toOtelMetricAttrs(metricName string) (attribute.Set, error) {
+	attrKeyValues := make([]attribute.KeyValue, 0, maxAttrsLen)
 	// Create attribute key value pairs for attributes common to all metricss
-	attrKeyValues := []attribute.KeyValue{
+	attrKeyValues = append(attrKeyValues,
 		attribute.String(metricLabelKeyMethod, mt.method),
 
 		// Add resource labels to otel metric labels.
@@ -416,7 +418,7 @@ func (mt *builtinMetricsTracer) toOtelMetricAttrs(metricName string) (attribute.
 		// use last attempt's cluster and zone
 		attribute.String(monitoredResLabelKeyCluster, mt.currOp.currAttempt.clusterID),
 		attribute.String(monitoredResLabelKeyZone, mt.currOp.currAttempt.zoneID),
-	}
+	)
 	attrKeyValues = append(attrKeyValues, mt.clientAttributes...)
 
 	// Get metric details
