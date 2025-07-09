@@ -34,7 +34,7 @@ sponge_log=$clientLibHome/sponge_log.log
 cd $testProxyHome
 GOWORK=off go build
 
-nohup $testProxyHome/testproxy --port $testProxyPort &
+nohup $testProxyHome --port $testProxyPort &
 proxyPID=$!
 
 # Stop the testproxy

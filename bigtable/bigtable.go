@@ -691,7 +691,9 @@ type BoundStatement struct {
 }
 
 // ExecuteOption is an optional argument to Execute.
-type ExecuteOption interface{}
+type ExecuteOption interface {
+	isExecuteOption()
+}
 
 // Execute executes a previously prepared query. f is called for each row in result set.
 // If f returns false, the stream is shut down and Execute returns.
@@ -761,7 +763,7 @@ func (bs *BoundStatement) execute(ctx context.Context, f func(ResultRow) bool, m
 
 		if !receivedResumeToken {
 			// Once we have a resume token we need the prepared query to never change
-			// The Bigtable servive will only send the query expired error for requests without a token
+			// The Bigtable service will only send the query expired error for requests without a token
 			// (before sending any responses).
 			// We don't want the plan to change on a transient error once we've already received a token.
 			err := bs.ps.refreshIfInvalid(ctx)

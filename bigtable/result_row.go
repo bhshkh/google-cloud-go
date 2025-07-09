@@ -46,7 +46,6 @@ type ColumnMetadata struct {
 
 // ResultRowMetadata provides information about the schema of the ResultRow
 type ResultRowMetadata struct {
-	// the order of values returned by [ResultRow.Scan].
 	Columns []ColumnMetadata
 	// map from column name to list of indices {name -> [idx1, idx2, ...]}
 	colNameToIndex *map[string][]int
@@ -61,7 +60,7 @@ func newResultRow(pbValues []*btpb.Value, pbMetadata *btpb.ResultSetMetadata, rr
 }
 
 // newResultRowMetadata returns the schema of the result row, describing the name and type of each column.
-// The order of columns matches the order of values returned by [ResultRow.Scan].
+// The order of columns matches the order of values returned by Bigtable service.
 func newResultRowMetadata(metadata *btpb.ResultSetMetadata) (*ResultRowMetadata, error) {
 	if metadata == nil {
 		return nil, errors.New("bigtable: metadata not found")

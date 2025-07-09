@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigtable"
+	"cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	btpb "cloud.google.com/go/bigtable/apiv2/bigtablepb"
 	pb "github.com/googleapis/cloud-bigtable-clients-test/testproxypb"
 	"google.golang.org/api/option"
@@ -916,6 +917,107 @@ func (s *goTestProxyServer) ReadModifyWriteRow(ctx context.Context, req *pb.Read
 	}
 
 	res.Row = rp
+	return res, nil
+}
+
+func (s *goTestProxyServer) ExecuteQuery(ctx context.Context, req *pb.ExecuteQueryRequest) (*pb.ExecuteQueryResult, error) {
+	s.clientsLock.RLock()
+	btc, err := s.client(req.ClientId)
+	if err != nil {
+		return nil, err
+	}
+	s.clientsLock.RUnlock()
+
+	rrq := req.GetRequest()
+	if rrq == nil {
+		log.Printf("missing inner request to ExecuteQuery: %v\n", req)
+		return nil, stat.Error(codes.InvalidArgument, "request to ExecuteQuery() is missing inner request")
+	}
+
+	ctx, cancel := btc.timeout(ctx)
+	defer cancel()
+
+	res := &pb.ExecuteQueryResult{
+		Status: &statpb.Status{
+			Code: int32(codes.OK),
+		},
+	}
+	rrqParams := rrq.GetParams()
+	paramTypes := make(map[string]bigtable.SQLType, len(rrqParams))
+	paramValues := make(map[string]interface{}, len(rrqParams))
+	for name, pbValue := range rrqParams {
+		sqlType, goValue, err := pbValueToSQLType(pbValue)
+		if err != nil {
+			res.Status = statusFromError(err)
+			return res, nil
+		}
+		paramTypes[name] = sqlType
+		paramValues[name] = goValue
+	}
+
+	ps, err := btc.c.PrepareStatement(ctx, rrq.GetQuery(), paramTypes)
+	if err != nil {
+		res.Status = statusFromError(err)
+		return res, nil
+	}
+
+	bs, err := ps.Bind(paramValues)
+	if err != nil {
+		res.Status = statusFromError(err)
+		return res, nil
+	}
+
+	sqlRows := []*pb.SqlRow{}
+
+	var metadataCols []*bigtablepb.ColumnMetadata
+	bs.Execute(ctx, func(rr bigtable.ResultRow) bool {
+		fmt.Printf("rr: %+v\n", rr)
+		var values []*bigtablepb.Value
+		for i, colMetadata := range rr.Metadata.Columns {
+			pbType, err := sqlTypeToPbType(colMetadata.SQLType)
+			if err != nil {
+				res.Status = statusFromError(err)
+				return false
+			}
+
+			metadataCols = append(metadataCols, &bigtablepb.ColumnMetadata{
+				Name: colMetadata.Name,
+				Type: pbType,
+			})
+			// Create column value holder
+			dest, err := getDestForSQLType(colMetadata.SQLType)
+			if err != nil {
+				res.Status = statusFromError(err)
+				return false
+			}
+
+			// Get the column value
+			err = rr.GetByIndex(i, dest)
+			if err != nil {
+				res.Status = statusFromError(err)
+				return false
+			}
+
+			// Convert column Go value to pb.Value
+			pbVal, err := goValueToPbValue(colMetadata.SQLType, dest)
+			if err != nil {
+				res.Status = statusFromError(err)
+				return false
+			}
+
+			values = append(values, pbVal)
+
+		}
+		sqlRows = append(sqlRows, &pb.SqlRow{
+			Values: values,
+		})
+		return true
+	})
+	res.Rows = sqlRows
+	res.Metadata = &pb.ResultSetMetadata{
+		Columns: metadataCols,
+	}
+	fmt.Printf("res: %+v\n", res)
 	return res, nil
 }
 
