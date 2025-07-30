@@ -135,6 +135,11 @@ func NewClientWithConfig(ctx context.Context, project, instance string, config C
 	o = append(o, internaloption.AllowNonDefaultServiceAccount(true))
 	o = append(o, opts...)
 
+	if metricsTracerFactory.enabled {
+		handler := &bigtableStatsHandler{factory: metricsTracerFactory}
+		o = append(o, option.WithGRPCDialOption(grpc.WithStatsHandler(handler)))
+	}
+
 	// TODO(b/372244283): Remove after b/358175516 has been fixed
 	asyncRefreshMetricAttrs := metricsTracerFactory.clientAttributes
 	asyncRefreshMetricAttrs = append(asyncRefreshMetricAttrs,
@@ -523,7 +528,7 @@ func (c *Client) prepareStatementWithMetadata(ctx context.Context, query string,
 	ctx = trace.StartSpan(ctx, "cloud.google.com/go/bigtable.PrepareQuery")
 	defer func() { trace.EndSpan(ctx, err) }()
 
-	mt := c.newBuiltinMetricsTracer(ctx, "", false)
+	ctx, mt := c.newBuiltinMetricsTracer(ctx, "", false)
 	defer recordOperationCompletion(mt)
 
 	preparedStatement, err = c.prepareStatement(ctx, mt, query, paramTypes, opts...)
@@ -702,7 +707,7 @@ func (bs *BoundStatement) Execute(ctx context.Context, f func(ResultRow) bool, o
 	ctx = trace.StartSpan(ctx, "cloud.google.com/go/bigtable.ExecuteQuery")
 	defer func() { trace.EndSpan(ctx, err) }()
 
-	mt := bs.ps.c.newBuiltinMetricsTracer(ctx, "", true)
+	ctx, mt := bs.ps.c.newBuiltinMetricsTracer(ctx, "", true)
 	defer recordOperationCompletion(mt)
 
 	err = bs.execute(ctx, f, mt)
@@ -942,7 +947,7 @@ func (ti *tableImpl) ApplyReadModifyWrite(ctx context.Context, row string, m *Re
 	return ti.Table.ApplyReadModifyWrite(ctx, row, m)
 }
 
-func (ti *tableImpl) newBuiltinMetricsTracer(ctx context.Context, isStreaming bool) *builtinMetricsTracer {
+func (ti *tableImpl) newBuiltinMetricsTracer(ctx context.Context, isStreaming bool) (context.Context, *builtinMetricsTracer) {
 	return ti.Table.newBuiltinMetricsTracer(ctx, isStreaming)
 }
 
@@ -960,7 +965,7 @@ func (t *Table) ReadRows(ctx context.Context, arg RowSet, f func(Row) bool, opts
 	ctx = trace.StartSpan(ctx, "cloud.google.com/go/bigtable.ReadRows")
 	defer func() { trace.EndSpan(ctx, err) }()
 
-	mt := t.newBuiltinMetricsTracer(ctx, true)
+	ctx, mt := t.newBuiltinMetricsTracer(ctx, true)
 	defer recordOperationCompletion(mt)
 
 	err = t.readRows(ctx, arg, f, mt, opts...)
@@ -1635,7 +1640,7 @@ func (t *Table) Apply(ctx context.Context, row string, m *Mutation, opts ...Appl
 	ctx = mergeOutgoingMetadata(ctx, t.md)
 	ctx = trace.StartSpan(ctx, "cloud.google.com/go/bigtable/Apply")
 	defer func() { trace.EndSpan(ctx, err) }()
-	mt := t.newBuiltinMetricsTracer(ctx, false)
+	ctx, mt := t.newBuiltinMetricsTracer(ctx, false)
 	defer recordOperationCompletion(mt)
 
 	err = t.apply(ctx, mt, row, m, opts...)
@@ -1913,7 +1918,7 @@ func (t *Table) ApplyBulk(ctx context.Context, rowKeys []string, muts []*Mutatio
 
 func (t *Table) applyGroup(ctx context.Context, group []*entryErr, opts ...ApplyOption) (err error) {
 	attrMap := make(map[string]interface{})
-	mt := t.newBuiltinMetricsTracer(ctx, true)
+	ctx, mt := t.newBuiltinMetricsTracer(ctx, true)
 	defer recordOperationCompletion(mt)
 
 	err = gaxInvokeWithRecorder(ctx, mt, "MutateRows", func(ctx context.Context, headerMD, trailerMD *metadata.MD, _ gax.CallSettings) error {
@@ -2075,7 +2080,7 @@ func (ts Timestamp) TruncateToMilliseconds() Timestamp {
 func (t *Table) ApplyReadModifyWrite(ctx context.Context, row string, m *ReadModifyWrite) (Row, error) {
 	ctx = mergeOutgoingMetadata(ctx, t.md)
 
-	mt := t.newBuiltinMetricsTracer(ctx, false)
+	ctx, mt := t.newBuiltinMetricsTracer(ctx, false)
 	defer recordOperationCompletion(mt)
 
 	updatedRow, err := t.applyReadModifyWrite(ctx, mt, row, m)
@@ -2156,7 +2161,7 @@ func (m *ReadModifyWrite) Increment(family, column string, delta int64) {
 func (t *Table) SampleRowKeys(ctx context.Context) ([]string, error) {
 	ctx = mergeOutgoingMetadata(ctx, t.md)
 
-	mt := t.newBuiltinMetricsTracer(ctx, true)
+	ctx, mt := t.newBuiltinMetricsTracer(ctx, true)
 	defer recordOperationCompletion(mt)
 
 	rowKeys, err := t.sampleRowKeys(ctx, mt)
@@ -2214,13 +2219,14 @@ func (t *Table) sampleRowKeys(ctx context.Context, mt *builtinMetricsTracer) ([]
 	return sampledRowKeys, err
 }
 
-func (t *Table) newBuiltinMetricsTracer(ctx context.Context, isStreaming bool) *builtinMetricsTracer {
+func (t *Table) newBuiltinMetricsTracer(ctx context.Context, isStreaming bool) (context.Context, *builtinMetricsTracer) {
 	return t.c.newBuiltinMetricsTracer(ctx, t.table, isStreaming)
 }
 
-func (c *Client) newBuiltinMetricsTracer(ctx context.Context, table string, isStreaming bool) *builtinMetricsTracer {
+func (c *Client) newBuiltinMetricsTracer(ctx context.Context, table string, isStreaming bool) (context.Context, *builtinMetricsTracer) {
 	mt := c.metricsTracerFactory.createBuiltinMetricsTracer(ctx, table, isStreaming)
-	return &mt
+	ctx = context.WithValue(ctx, builtinMetricsTracerKey{}, &mt)
+	return ctx, &mt
 }
 
 // recordOperationCompletion records as many operation specific metrics as it can
@@ -2249,6 +2255,12 @@ func recordOperationCompletion(mt *builtinMetricsTracer) {
 	// Record application_latencies
 	appBlockingLatAttrs, _ := mt.toOtelMetricAttrs(metricNameAppBlockingLatencies)
 	mt.instrumentAppBlockingLatencies.Record(mt.ctx, mt.currOp.appBlockingLatency, metric.WithAttributeSet(appBlockingLatAttrs))
+
+	// Record client_blocking_latencies
+	cblAttrs, _ := mt.toOtelMetricAttrs(metricNameClientBlockingLatencies)
+	if mt.currOp.clientBlockingLatency > 0 {
+		mt.instrumentClientBlockingLatencies.Record(mt.ctx, mt.currOp.clientBlockingLatency, metric.WithAttributeSet(cblAttrs))
+	}
 }
 
 // gaxInvokeWithRecorder:

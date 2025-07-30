@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/bigtable/internal"
@@ -30,6 +32,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc/stats"
 )
 
 const (
@@ -57,13 +60,14 @@ const (
 	metricLabelKeyClientUID          = "client_uid"
 
 	// Metric names
-	metricNameOperationLatencies   = "operation_latencies"
-	metricNameAttemptLatencies     = "attempt_latencies"
-	metricNameServerLatencies      = "server_latencies"
-	metricNameAppBlockingLatencies = "application_latencies"
-	metricNameRetryCount           = "retry_count"
-	metricNameDebugTags            = "debug_tags"
-	metricNameConnErrCount         = "connectivity_error_count"
+	metricNameOperationLatencies      = "operation_latencies"
+	metricNameAttemptLatencies        = "attempt_latencies"
+	metricNameServerLatencies         = "server_latencies"
+	metricNameAppBlockingLatencies    = "application_latencies"
+	metricNameClientBlockingLatencies = "throttling_latencies"
+	metricNameRetryCount              = "retry_count"
+	metricNameDebugTags               = "debug_tags"
+	metricNameConnErrCount            = "connectivity_error_count"
 
 	// Metric units
 	metricUnitMS    = "ms"
@@ -109,7 +113,8 @@ var (
 			},
 			recordedPerAttempt: true,
 		},
-		metricNameAppBlockingLatencies: {},
+		metricNameAppBlockingLatencies:    {},
+		metricNameClientBlockingLatencies: {},
 		metricNameRetryCount: {
 			additionalAttrs: []string{
 				metricLabelKeyStatus,
@@ -166,13 +171,14 @@ type builtinMetricsTracerFactory struct {
 	// do not change across different function calls on client
 	clientAttributes []attribute.KeyValue
 
-	operationLatencies   metric.Float64Histogram
-	serverLatencies      metric.Float64Histogram
-	attemptLatencies     metric.Float64Histogram
-	appBlockingLatencies metric.Float64Histogram
-	retryCount           metric.Int64Counter
-	connErrCount         metric.Int64Counter
-	debugTags            metric.Int64Counter
+	operationLatencies      metric.Float64Histogram
+	serverLatencies         metric.Float64Histogram
+	attemptLatencies        metric.Float64Histogram
+	appBlockingLatencies    metric.Float64Histogram
+	clientBlockingLatencies metric.Float64Histogram
+	retryCount              metric.Int64Counter
+	connErrCount            metric.Int64Counter
+	debugTags               metric.Int64Counter
 }
 
 func newBuiltinMetricsTracerFactory(ctx context.Context, project, instance, appProfile string, metricsProvider MetricsProvider, opts ...option.ClientOption) (*builtinMetricsTracerFactory, error) {
@@ -283,6 +289,17 @@ func (tf *builtinMetricsTracerFactory) createInstruments(meter metric.Meter) err
 		return err
 	}
 
+	// Create client_blocking_latencies
+	tf.clientBlockingLatencies, err = meter.Float64Histogram(
+		metricNameClientBlockingLatencies,
+		metric.WithDescription("The time between when a stream is created and when the message is actually sent."),
+		metric.WithUnit(metricUnitMS),
+		metric.WithExplicitBucketBoundaries(bucketBounds...),
+	)
+	if err != nil {
+		return err
+	}
+
 	// Create retry_count
 	tf.retryCount, err = meter.Int64Counter(
 		metricNameRetryCount,
@@ -309,6 +326,77 @@ func (tf *builtinMetricsTracerFactory) createInstruments(meter metric.Meter) err
 	return err
 }
 
+type perRPCStats struct {
+	beginTimes map[string]time.Time
+	mu         sync.Mutex
+	nextID     uint64
+}
+
+type perRPCStatsKey struct{}
+
+type bigtableStatsHandler struct {
+	factory *builtinMetricsTracerFactory
+}
+
+func (h *bigtableStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+	p := &perRPCStats{beginTimes: make(map[string]time.Time)}
+	return context.WithValue(ctx, perRPCStatsKey{}, p)
+}
+
+func (h *bigtableStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
+	perRPC, _ := ctx.Value(perRPCStatsKey{}).(*perRPCStats)
+	if perRPC == nil {
+		return
+	}
+
+	mtVal := ctx.Value(builtinMetricsTracerKey{})
+	if mtVal == nil {
+		return
+	}
+	mt, ok := mtVal.(*builtinMetricsTracer)
+	if !ok || mt == nil || !mt.builtInEnabled {
+		return
+	}
+
+	switch st := s.(type) {
+	case *stats.Begin:
+		perRPC.mu.Lock()
+		defer perRPC.mu.Unlock()
+		id := fmt.Sprintf("%s-%d", mt.method, atomic.AddUint64(&perRPC.nextID, 1))
+		perRPC.beginTimes[id] = st.BeginTime
+	case *stats.OutPayload:
+		perRPC.mu.Lock()
+		defer perRPC.mu.Unlock()
+		// This is not a perfect way to get the RPC ID, but it's the best we can do
+		// without a unique ID from the stats package.
+		var rpcID string
+		for id := range perRPC.beginTimes {
+			rpcID = id
+			break
+		}
+		if rpcID == "" {
+			return
+		}
+
+		if beginTime, ok := perRPC.beginTimes[rpcID]; ok {
+			latency := st.SentTime.Sub(beginTime)
+			delete(perRPC.beginTimes, rpcID) // So we only record for the first message
+			latencyMs := convertToMs(latency)
+			mt.currOp.incrementClientBlockingLatency(latencyMs)
+		}
+	}
+}
+
+func (h *bigtableStatsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+
+func (h *bigtableStatsHandler) HandleConn(ctx context.Context, s stats.ConnStats) {
+	// Do nothing for now
+}
+
+type builtinMetricsTracerKey struct{}
+
 // builtinMetricsTracer is created one per operation
 // It is used to store metric instruments, attribute values
 // and other data required to obtain and record them
@@ -320,13 +408,14 @@ type builtinMetricsTracer struct {
 	// do not change across different operations on client
 	clientAttributes []attribute.KeyValue
 
-	instrumentOperationLatencies   metric.Float64Histogram
-	instrumentServerLatencies      metric.Float64Histogram
-	instrumentAttemptLatencies     metric.Float64Histogram
-	instrumentAppBlockingLatencies metric.Float64Histogram
-	instrumentRetryCount           metric.Int64Counter
-	instrumentConnErrCount         metric.Int64Counter
-	instrumentDebugTags            metric.Int64Counter
+	instrumentOperationLatencies      metric.Float64Histogram
+	instrumentServerLatencies         metric.Float64Histogram
+	instrumentAttemptLatencies        metric.Float64Histogram
+	instrumentAppBlockingLatencies    metric.Float64Histogram
+	instrumentClientBlockingLatencies metric.Float64Histogram
+	instrumentRetryCount              metric.Int64Counter
+	instrumentConnErrCount            metric.Int64Counter
+	instrumentDebugTags               metric.Int64Counter
 
 	tableName   string
 	method      string
@@ -352,7 +441,8 @@ type opTracer struct {
 
 	currAttempt attemptTracer
 
-	appBlockingLatency float64
+	appBlockingLatency    float64
+	clientBlockingLatency float64
 }
 
 func (o *opTracer) setStartTime(t time.Time) {
@@ -369,6 +459,10 @@ func (o *opTracer) incrementAttemptCount() {
 
 func (o *opTracer) incrementAppBlockingLatency(latency float64) {
 	o.appBlockingLatency += latency
+}
+
+func (o *opTracer) incrementClientBlockingLatency(latency float64) {
+	o.clientBlockingLatency += latency
 }
 
 // attemptTracer is used to record metrics for each individual attempt of the operation.
@@ -425,13 +519,14 @@ func (tf *builtinMetricsTracerFactory) createBuiltinMetricsTracer(ctx context.Co
 		currOp:           currOpTracer,
 		clientAttributes: tf.clientAttributes,
 
-		instrumentOperationLatencies:   tf.operationLatencies,
-		instrumentServerLatencies:      tf.serverLatencies,
-		instrumentAttemptLatencies:     tf.attemptLatencies,
-		instrumentAppBlockingLatencies: tf.appBlockingLatencies,
-		instrumentRetryCount:           tf.retryCount,
-		instrumentConnErrCount:         tf.connErrCount,
-		instrumentDebugTags:            tf.debugTags,
+		instrumentOperationLatencies:      tf.operationLatencies,
+		instrumentServerLatencies:         tf.serverLatencies,
+		instrumentAttemptLatencies:        tf.attemptLatencies,
+		instrumentAppBlockingLatencies:    tf.appBlockingLatencies,
+		instrumentClientBlockingLatencies: tf.clientBlockingLatencies,
+		instrumentRetryCount:              tf.retryCount,
+		instrumentConnErrCount:            tf.connErrCount,
+		instrumentDebugTags:               tf.debugTags,
 
 		tableName:   tableName,
 		isStreaming: isStreaming,
