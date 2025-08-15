@@ -17,9 +17,11 @@ limitations under the License.
 package bigtable
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"reflect"
 	"sync/atomic"
@@ -170,7 +172,9 @@ var (
 		return filteredOptions
 	}
 
-	sharedLatencyStatsHandler = &latencyStatsHandler{}
+	sharedLatencyStatsHandler = &latencyStatsHandler{
+		buffer: new(bytes.Buffer),
+	}
 )
 
 type metricInfo struct {
@@ -708,7 +712,13 @@ func (t *blockingLatencyTracker) getMessageSentNanos() int64 {
 }
 
 // latencyStatsHandler is a gRPC stats.Handler to measure client blocking latency.
-type latencyStatsHandler struct{}
+type latencyStatsHandler struct {
+	buffer *bytes.Buffer
+}
+
+func init() {
+	log.SetOutput(sharedLatencyStatsHandler.buffer)
+}
 
 var _ stats.Handler = (*latencyStatsHandler)(nil)
 
@@ -724,7 +734,29 @@ func (h *latencyStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	}
 
 	if op, ok := s.(*stats.OutPayload); ok {
+		log.Println("Recording client_blocking_latency")
+
 		tracker.recordLatency(op.SentTime)
+	}
+
+	switch s.(type) {
+	case *stats.Begin:
+		log.Println("*stats.Begin")
+	case *stats.InPayload:
+		log.Println("*stats.InPayload")
+	case *stats.InHeader:
+		log.Println("*stats.InHeader")
+	case *stats.InTrailer:
+		log.Println("*stats.InTrailer")
+	case *stats.OutPayload:
+		log.Println("*stats.OutPayload")
+	case *stats.OutHeader:
+		log.Println("*stats.OutHeader")
+	case *stats.OutTrailer:
+		log.Println("*stats.OutTrailer")
+	case *stats.End:
+		log.Println("*stats.End")
+
 	}
 }
 

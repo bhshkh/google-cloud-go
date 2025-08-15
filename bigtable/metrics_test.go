@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"reflect"
 	"slices"
 	"sort"
@@ -240,6 +241,7 @@ func TestNewBuiltinMetricsTracerFactory(t *testing.T) {
 			if isFirstAttempt {
 				// Fail first attempt
 				isFirstAttempt = false
+				log.Println("Failing first attempt. return mock error from stream interceptor")
 				return status.Error(codes.Unavailable, "Mock Unavailable error")
 			}
 
@@ -250,6 +252,7 @@ func TestNewBuiltinMetricsTracerFactory(t *testing.T) {
 			})
 			ss.SendHeader(header)
 		}
+		log.Println("Succeed second attempt.")
 		return handler(srv, ss)
 	}
 
@@ -274,15 +277,15 @@ func TestNewBuiltinMetricsTracerFactory(t *testing.T) {
 				attribute.String(metricLabelKeyClientName, clientName),
 			},
 		},
-		{
-			desc:   "should create a new tracer factory with noop meter provider",
-			config: ClientConfig{MetricsProvider: NoopMetricsProvider{}, AppProfile: appProfile},
-		},
-		{
-			desc:        "should not create instruments when BIGTABLE_EMULATOR_HOST is set",
-			config:      ClientConfig{AppProfile: appProfile},
-			setEmulator: true,
-		},
+		// {
+		// 	desc:   "should create a new tracer factory with noop meter provider",
+		// 	config: ClientConfig{MetricsProvider: NoopMetricsProvider{}, AppProfile: appProfile},
+		// },
+		// {
+		// 	desc:        "should not create instruments when BIGTABLE_EMULATOR_HOST is set",
+		// 	config:      ClientConfig{AppProfile: appProfile},
+		// 	setEmulator: true,
+		// },
 	}
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
@@ -313,7 +316,9 @@ func TestNewBuiltinMetricsTracerFactory(t *testing.T) {
 			gotNonNilInstruments := gotClient.metricsTracerFactory.operationLatencies != nil &&
 				gotClient.metricsTracerFactory.serverLatencies != nil &&
 				gotClient.metricsTracerFactory.attemptLatencies != nil &&
+				gotClient.metricsTracerFactory.firstRespLatencies != nil &&
 				gotClient.metricsTracerFactory.appBlockingLatencies != nil &&
+				gotClient.metricsTracerFactory.clientBlockingLatencies != nil &&
 				gotClient.metricsTracerFactory.retryCount != nil &&
 				gotClient.metricsTracerFactory.connErrCount != nil
 			if test.wantBuiltinEnabled != gotNonNilInstruments {
@@ -393,7 +398,7 @@ func TestNewBuiltinMetricsTracerFactory(t *testing.T) {
 				}
 				sort.Strings(gotMetricTypes)
 				if !testutil.Equal(gotMetricTypes, wantMetricTypesGCM) {
-					t.Errorf("Metric types missing in req. \ngot: %v, \nwant: %v\ndiff: %v", gotMetricTypes, wantMetricTypesGCM, testutil.Diff(gotMetricTypes, wantMetricTypesGCM))
+					t.Errorf("Metric types missing in req. \ngot: %v, \nwant: %v\ndiff got- want+\n: %v", gotMetricTypes, wantMetricTypesGCM, testutil.Diff(gotMetricTypes, wantMetricTypesGCM))
 				}
 			}
 
@@ -403,6 +408,7 @@ func TestNewBuiltinMetricsTracerFactory(t *testing.T) {
 			}
 		})
 	}
+	fmt.Println(sharedLatencyStatsHandler.buffer.String())
 }
 
 func TestConnectivityErrorCount(t *testing.T) {

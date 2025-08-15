@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log"
 	"net/url"
 	"os"
 	"strconv"
@@ -1009,7 +1010,9 @@ func (t *Table) readRows(ctx context.Context, arg RowSet, f func(Row) bool, mt *
 		defer cancel()
 
 		startTime := time.Now()
+		log.Println("Before bigtable.go ReadRows")
 		stream, err := t.c.client.ReadRows(ctx, req)
+		log.Println("After bigtable.go ReadRows")
 		if err != nil {
 			return err
 		}
