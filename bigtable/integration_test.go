@@ -5258,22 +5258,25 @@ func TestIntegration_AdminLogicalView(t *testing.T) {
 	}
 
 	// List logical views
-	logicalViews, err := instanceAdminClient.LogicalViews(ctx, testEnv.Config().Instance)
-	if err != nil {
-		t.Fatalf("Listing logical views: %v", err)
-	}
-	if got, want := len(logicalViews), 1; got != want {
-		t.Fatalf("Listing logical views count: %d, want: != %d", got, want)
-	}
-	if got, want := logicalViews[0].LogicalViewID, logicalView; got != want {
-		t.Errorf("LogicalView Name: %s, want: %s", got, want)
-	}
-	if got, want := logicalViews[0].Query, logicalViewInfo.Query; got != want {
-		t.Errorf("LogicalView Query: %q, want: %q", got, want)
-	}
-	if got, want := logicalViews[0].DeletionProtection, logicalViewInfo.DeletionProtection; got != want {
-		t.Errorf("LogicalView DeletionProtection: %v, want: %v", got, want)
-	}
+	testutil.Retry(t, 10, 10*time.Second, func(r *testutil.R) {
+		logicalViews, err := instanceAdminClient.LogicalViews(ctx, testEnv.Config().Instance)
+		if err != nil {
+			r.Fatalf("Listing logical views: %v", err)
+		}
+		if got, want := len(logicalViews), 1; got != want {
+			r.Errorf("Listing logical views count: %d, want: != %d", got, want)
+			return
+		}
+		if got, want := logicalViews[0].LogicalViewID, logicalView; got != want {
+			r.Errorf("LogicalView Name: %s, want: %s", got, want)
+		}
+		if got, want := logicalViews[0].Query, logicalViewInfo.Query; got != want {
+			r.Errorf("LogicalView Query: %q, want: %q", got, want)
+		}
+		if got, want := logicalViews[0].DeletionProtection, logicalViewInfo.DeletionProtection; got != want {
+			r.Errorf("LogicalView DeletionProtection: %v, want: %v", got, want)
+		}
+	})
 
 	// Get logical view
 	lvInfo, err := instanceAdminClient.LogicalViewInfo(ctx, testEnv.Config().Instance, logicalView)
@@ -5299,16 +5302,18 @@ func TestIntegration_AdminLogicalView(t *testing.T) {
 	}
 
 	// Check that updated logical view has the correct deletion protection
-	lvInfo, err = instanceAdminClient.LogicalViewInfo(ctx, testEnv.Config().Instance, logicalView)
-	if err != nil {
-		t.Fatalf("Getting logical view: %v", err)
-	}
-	if got, want := lvInfo.Query, newLogicalViewInfo.Query; got != want {
-		t.Errorf("LogicalView Query: %q, want: %q", got, want)
-	}
-	if got, want := lvInfo.DeletionProtection, newLogicalViewInfo.DeletionProtection; got != want {
-		t.Errorf("LogicalView DeletionProtection: %v, want: %v", got, want)
-	}
+	testutil.Retry(t, 10, 10*time.Second, func(r *testutil.R) {
+		lvInfo, err := instanceAdminClient.LogicalViewInfo(ctx, testEnv.Config().Instance, logicalView)
+		if err != nil {
+			r.Fatalf("Getting logical view: %v", err)
+		}
+		if got, want := lvInfo.Query, newLogicalViewInfo.Query; got != want {
+			r.Errorf("LogicalView Query: %q, want: %q", got, want)
+		}
+		if got, want := lvInfo.DeletionProtection, newLogicalViewInfo.DeletionProtection; got != want {
+			r.Errorf("LogicalView DeletionProtection: %v, want: %v", got, want)
+		}
+	})
 
 	// Delete logical view
 	if err = instanceAdminClient.DeleteLogicalView(ctx, testEnv.Config().Instance, logicalView); err != nil {
@@ -5316,13 +5321,15 @@ func TestIntegration_AdminLogicalView(t *testing.T) {
 	}
 
 	// Verify the logical view was deleted.
-	logicalViews, err = instanceAdminClient.LogicalViews(ctx, testEnv.Config().Instance)
-	if err != nil {
-		t.Fatalf("Listing logical views: %v", err)
-	}
-	if got, want := len(logicalViews), 0; got != want {
-		t.Fatalf("Listing logical views count: %d, want: != %d", got, want)
-	}
+	testutil.Retry(t, 10, 10*time.Second, func(r *testutil.R) {
+		logicalViews, err := instanceAdminClient.LogicalViews(ctx, testEnv.Config().Instance)
+		if err != nil {
+			r.Fatalf("Listing logical views: %v", err)
+		}
+		if got, want := len(logicalViews), 0; got != want {
+			r.Errorf("Listing logical views count: %d, want: != %d", got, want)
+		}
+	})
 }
 
 func TestIntegration_AdminMaterializedView(t *testing.T) {
