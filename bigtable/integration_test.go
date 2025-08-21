@@ -2040,13 +2040,14 @@ func TestIntegration_AutomatedBackups(t *testing.T) {
 
 	if table.AutomatedBackupConfig == nil {
 		t.Errorf("Expect Automated Backup Policy to be enabled for table: %v has info: %v", tableConf.TableID, table)
-	}
-	tableAbp := table.AutomatedBackupConfig.(*TableAutomatedBackupPolicy)
-	if !equalOptionalDuration(tableAbp.Frequency, automatedBackupPolicy.Frequency) {
-		t.Errorf("Expect automated backup policy frequency to be set for table: %v has info: %v", tableConf.TableID, table)
-	}
-	if !equalOptionalDuration(tableAbp.RetentionPeriod, automatedBackupPolicy.RetentionPeriod) {
-		t.Errorf("Expect automated backup policy retention period to be set for table: %v has info: %v", tableConf.TableID, table)
+	} else {
+		tableAbp := table.AutomatedBackupConfig.(*TableAutomatedBackupPolicy)
+		if !equalOptionalDuration(tableAbp.Frequency, automatedBackupPolicy.Frequency) {
+			t.Errorf("Expect automated backup policy frequency to be set for table: %v has info: %v", tableConf.TableID, table)
+		}
+		if !equalOptionalDuration(tableAbp.RetentionPeriod, automatedBackupPolicy.RetentionPeriod) {
+			t.Errorf("Expect automated backup policy retention period to be set for table: %v has info: %v", tableConf.TableID, table)
+		}
 	}
 
 	// Test update automated backup policy
@@ -2085,14 +2086,14 @@ func TestIntegration_AutomatedBackups(t *testing.T) {
 		}
 		if gotTable.AutomatedBackupConfig == nil {
 			t.Errorf("%v: Expect Automated Backup Policy to be enabled for table: %v has info: %v", testcase.desc, tableConf.TableID, gotTable)
-		}
-
-		gotTableAbp := gotTable.AutomatedBackupConfig.(*TableAutomatedBackupPolicy)
-		if testcase.bkpPolicy.Frequency != nil && !equalOptionalDuration(gotTableAbp.Frequency, testcase.bkpPolicy.Frequency) {
-			t.Errorf("%v: Expect automated backup policy frequency to be set for table: %v has info: %v", testcase.desc, tableConf.TableID, table)
-		}
-		if testcase.bkpPolicy.RetentionPeriod != nil && !equalOptionalDuration(gotTableAbp.RetentionPeriod, testcase.bkpPolicy.RetentionPeriod) {
-			t.Errorf("%v: Expect automated backup policy retention period to be set for table: %v has info: %v", testcase.desc, tableConf.TableID, table)
+		} else {
+			gotTableAbp := gotTable.AutomatedBackupConfig.(*TableAutomatedBackupPolicy)
+			if testcase.bkpPolicy.Frequency != nil && !equalOptionalDuration(gotTableAbp.Frequency, testcase.bkpPolicy.Frequency) {
+				t.Errorf("%v: Expect automated backup policy frequency to be set for table: %v has info: %v", testcase.desc, tableConf.TableID, table)
+			}
+			if testcase.bkpPolicy.RetentionPeriod != nil && !equalOptionalDuration(gotTableAbp.RetentionPeriod, testcase.bkpPolicy.RetentionPeriod) {
+				t.Errorf("%v: Expect automated backup policy retention period to be set for table: %v has info: %v", testcase.desc, tableConf.TableID, table)
+			}
 		}
 	}
 
@@ -2628,7 +2629,7 @@ func TestIntegration_BackupIAM(t *testing.T) {
 		t.Errorf("got roles %v, want none", got)
 	}
 	// Set backup policy.
-	member := "domain:google.com"
+	member := "serviceAccount:libraries-sa@bootstrap-libraries.tpczero-system.iam.gserviceaccount.com"
 	// Add a member, set the policy, then check that the member is present.
 	p.Add(member, iam.Viewer)
 	if err = iamHandle.SetPolicy(ctx, p); err != nil {
@@ -2702,7 +2703,7 @@ func TestIntegration_AuthorizedViewIAM(t *testing.T) {
 		t.Errorf("got roles %v, want none", got)
 	}
 	// Set authorized view policy.
-	member := "domain:google.com"
+	member := "serviceAccount:libraries-sa@bootstrap-libraries.tpczero-system.iam.gserviceaccount.com"
 	// Add a member, set the policy, then check that the member is present.
 	p.Add(member, iam.Viewer)
 	if err = iamHandle.SetPolicy(ctx, p); err != nil {
@@ -5246,7 +5247,13 @@ func TestIntegration_AdminLogicalView(t *testing.T) {
 	// Create logical view
 	logicalViewUUID := uid.NewSpace("logicalView-", &uid.Options{})
 	logicalView := logicalViewUUID.New()
-	defer instanceAdminClient.DeleteLogicalView(ctx, testEnv.Config().Instance, logicalView)
+	defer func() {
+		instanceAdminClient.UpdateLogicalView(ctx, testEnv.Config().Instance, LogicalViewInfo{
+			LogicalViewID:      logicalView,
+			DeletionProtection: Unprotected,
+		})
+		instanceAdminClient.DeleteLogicalView(ctx, testEnv.Config().Instance, logicalView)
+	}()
 
 	logicalViewInfo := LogicalViewInfo{
 		LogicalViewID:      logicalView,

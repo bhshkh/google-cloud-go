@@ -68,9 +68,9 @@ func init() {
 	// Don't test instance creation by default, as quota is necessary and aborted tests could strand resources.
 	flag.BoolVar(&runCreateInstanceTests, "it.run-create-instance-tests", true,
 		"Run tests that create instances as part of executing. Requires sufficient Cloud Bigtable quota. Requires that it.use-prod is true.")
-	flag.StringVar(&instanceToCreateZone, "it.instance-to-create-zone", "us-central1-b",
+	flag.StringVar(&instanceToCreateZone, "it.instance-to-create-zone", "u-us-prp1-a",
 		"The zone in which to create the new test instance.")
-	flag.StringVar(&instanceToCreateZone2, "it.instance-to-create-zone2", "us-east1-c",
+	flag.StringVar(&instanceToCreateZone2, "it.instance-to-create-zone2", "u-us-prp1-b",
 		"The zone in which to create a second cluster in the test instance.")
 	// Use sysctl or iptables to blackhole DirectPath IP for fallback tests.
 	flag.StringVar(&blackholeDpv6Cmd, "it.blackhole-dpv6-cmd", "", "Command to make LB and backend addresses blackholed over dpv6")
@@ -131,7 +131,7 @@ func NewIntegrationEnv() (IntegrationEnv, error) {
 		c.Cluster2 = os.Getenv("GCLOUD_TESTS_BIGTABLE_PRI_PROJ_SEC_CLUSTER")
 	}
 	universeDomain := os.Getenv("GCLOUD_TESTS_BIGTABLE_UNIVERSE_DOMAIN")
-	c.ClientOpts = append(c.ClientOpts, option.WithUniverseDomain(universeDomain))
+	c.ClientOpts = []option.ClientOption{option.WithUniverseDomain(universeDomain)}
 
 	if legacyUseProd != "" {
 		fmt.Println("WARNING: using legacy commandline arg -use_prod, please switch to -it.*")
@@ -370,5 +370,6 @@ func (e *ProdEnv) newProdClient(config ClientConfig) (*Client, error) {
 		clientOpts = append(clientOpts, option.WithGRPCDialOption(grpc.WithDefaultCallOptions(grpc.Peer(e.peerInfo))))
 	}
 	clientOpts = append(clientOpts, e.config.ClientOpts...)
+	fmt.Println(e.config.ClientOpts)
 	return NewClientWithConfig(context.Background(), e.config.Project, e.config.Instance, config, clientOpts...)
 }
