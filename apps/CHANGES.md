@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.0](https://github.com/googleapis/google-cloud-go/compare/apps/v0.7.4...apps/v0.8.0) (2025-07-09)
+
+
+### Features
+
+* **apps:** New client(s) ([#12540](https://github.com/googleapis/google-cloud-go/issues/12540)) ([8df9ea2](https://github.com/googleapis/google-cloud-go/commit/8df9ea2300a82321a5b6a8cd43c914c7c8c6a904))
+
+## [0.7.4](https://github.com/googleapis/google-cloud-go/compare/apps/v0.7.3...apps/v0.7.4) (2025-06-04)
+
+
+### Bug Fixes
+
+* **apps:** Fix: upgrade gRPC service registration func ([6a871e0](https://github.com/googleapis/google-cloud-go/commit/6a871e0f6924980da4fec78405bfe0736522afa8))
+
+## [0.7.3](https://github.com/googleapis/google-cloud-go/compare/apps/v0.7.2...apps/v0.7.3) (2025-05-13)
+
+
+### Bug Fixes
+
+* **apps/events/subscriptions:** An existing oauth_scope https ([35b4f4a](https://github.com/googleapis/google-cloud-go/commit/35b4f4aced4a5dc79f1315c74feaac7d11657f8a))
+
 ## [0.7.2](https://github.com/googleapis/google-cloud-go/compare/apps/v0.7.1...apps/v0.7.2) (2025-04-15)
 
 

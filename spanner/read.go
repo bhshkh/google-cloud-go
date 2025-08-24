@@ -28,6 +28,8 @@ import (
 	"cloud.google.com/go/internal/trace"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/googleapis/gax-go/v2"
+	otcodes "go.opentelemetry.io/otel/codes"
+	otrace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -39,6 +41,7 @@ import (
 // stream.
 type streamingReceiver interface {
 	Recv() (*sppb.PartialResultSet, error)
+	Context() context.Context
 }
 
 // errEarlyReadEnd returns error for read finishes when gRPC stream is still
@@ -92,10 +95,10 @@ func streamWithReplaceSessionFunc(
 	gsc *grpcSpannerClient,
 ) *RowIterator {
 	ctx, cancel := context.WithCancel(ctx)
-	ctx = trace.StartSpan(ctx, "cloud.google.com/go/spanner.RowIterator")
+	ctx, _ = startSpan(ctx, "RowIterator")
 	return &RowIterator{
 		meterTracerFactory:   meterTracerFactory,
-		streamd:              newResumableStreamDecoder(ctx, logger, rpc, replaceSession, gsc),
+		streamd:              newResumableStreamDecoder(ctx, cancel, logger, rpc, replaceSession, gsc),
 		rowd:                 &partialResultSetDecoder{},
 		setTransactionID:     setTransactionID,
 		updatePrecommitToken: updatePrecommitToken,
@@ -191,7 +194,7 @@ func (r *RowIterator) Next() (*Row, error) {
 				// if request contains TransactionSelector::Begin option, this is here as fallback to retry with
 				// explicit transactionID after a retry.
 				r.setTransactionID(nil)
-				r.err = errInlineBeginTransactionFailed()
+				r.err = r.updateTxState(errInlineBeginTransactionFailed(nil))
 				return nil, r.err
 			}
 			r.setTransactionID = nil
@@ -234,6 +237,7 @@ func (r *RowIterator) Next() (*Row, error) {
 	} else if !r.rowd.done() {
 		r.err = errEarlyReadEnd()
 	} else {
+		r.cancel = nil
 		r.err = iterator.Done
 	}
 	return nil, r.err
@@ -401,6 +405,9 @@ type resumableStreamDecoder struct {
 	// ctx is the caller's context, used for cancel/timeout Next().
 	ctx context.Context
 
+	// cancel is the function to cancel the context
+	cancel func()
+
 	// rpc is a factory of streamingReceiver, which might resume
 	// a previous stream from the point encoded in restartToken.
 	// rpc is always a wrapper of a Cloud Spanner query which is
@@ -461,9 +468,10 @@ type resumableStreamDecoder struct {
 // newResumableStreamDecoder creates a new resumeableStreamDecoder instance.
 // Parameter rpc should be a function that creates a new stream beginning at the
 // restartToken if non-nil.
-func newResumableStreamDecoder(ctx context.Context, logger *log.Logger, rpc func(ct context.Context, restartToken []byte, opts ...gax.CallOption) (streamingReceiver, error), replaceSession func(ctx context.Context) error, gsc *grpcSpannerClient) *resumableStreamDecoder {
+func newResumableStreamDecoder(ctx context.Context, cancel func(), logger *log.Logger, rpc func(ct context.Context, restartToken []byte, opts ...gax.CallOption) (streamingReceiver, error), replaceSession func(ctx context.Context) error, gsc *grpcSpannerClient) *resumableStreamDecoder {
 	return &resumableStreamDecoder{
 		ctx:                         ctx,
+		cancel:                      cancel,
 		logger:                      logger,
 		rpc:                         rpc,
 		replaceSessionFunc:          replaceSession,
@@ -672,6 +680,19 @@ func (d *resumableStreamDecoder) tryRecv(mt *builtinMetricsTracer, retryer gax.R
 	if d.err == nil {
 		d.q.push(res)
 		if res.GetLast() {
+			if span := otrace.SpanFromContext(d.stream.Context()); span != nil && span.IsRecording() {
+				span.SetStatus(otcodes.Ok, "Stream finished successfully")
+				span.End()
+			}
+			if d.cancel != nil {
+				// Remove the cancel function to prevent iter.Stop from also calling it.
+				cancel := d.cancel
+				d.cancel = nil
+				go func() {
+					_, _ = d.stream.Recv()
+					cancel()
+				}()
+			}
 			d.changeState(finished)
 			return
 		}
@@ -684,6 +705,10 @@ func (d *resumableStreamDecoder) tryRecv(mt *builtinMetricsTracer, retryer gax.R
 
 	if d.err == io.EOF {
 		d.err = nil
+		// Cancel the context after receiving trailers
+		if d.cancel != nil {
+			d.cancel()
+		}
 		d.changeState(finished)
 		return
 	}

@@ -38,6 +38,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/experimental/stats"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats/opentelemetry"
 	"google.golang.org/grpc/status"
 
@@ -229,8 +230,9 @@ type metricInfo struct {
 
 // builtinMetricsTracerFactory is responsible for creating and managing metrics tracers.
 type builtinMetricsTracerFactory struct {
-	enabled             bool // Indicates if metrics tracing is enabled.
-	isDirectPathEnabled bool // Indicates if DirectPath is enabled.
+	enabled                   bool // Indicates if metrics tracing is enabled.
+	isDirectPathEnabled       bool // Indicates if DirectPath is enabled.
+	isAFEBuiltInMetricEnabled bool
 
 	// shutdown is a function to be called on client close to clean up resources.
 	shutdown func(ctx context.Context)
@@ -251,7 +253,7 @@ type builtinMetricsTracerFactory struct {
 	attemptCount       metric.Int64Counter     // Counter for the number of attempts.
 }
 
-func newBuiltinMetricsTracerFactory(ctx context.Context, dbpath string, metricsProvider metric.MeterProvider, compression string, opts ...option.ClientOption) (*builtinMetricsTracerFactory, error) {
+func newBuiltinMetricsTracerFactory(ctx context.Context, dbpath, compression string, isAFEBuiltInMetricEnabled, isEnableGRPCBuiltInMetrics bool, metricsProvider metric.MeterProvider, opts ...option.ClientOption) (*builtinMetricsTracerFactory, error) {
 	clientUID, err := generateClientUID()
 	if err != nil {
 		log.Printf("built-in metrics: generateClientUID failed: %v. Using empty string in the %v metric atteribute", err, metricLabelKeyClientUID)
@@ -276,18 +278,18 @@ func newBuiltinMetricsTracerFactory(ctx context.Context, dbpath string, metricsP
 		},
 		shutdown: func(ctx context.Context) {},
 	}
+	tracerFactory.isAFEBuiltInMetricEnabled = isAFEBuiltInMetricEnabled
 	tracerFactory.isDirectPathEnabled = false
 	tracerFactory.enabled = false
 	var meterProvider *sdkmetric.MeterProvider
 	if metricsProvider == nil {
 		// Create default meter provider
-		mpOptions, err := builtInMeterProviderOptions(project, compression, tracerFactory.clientAttributes, opts...)
+		mpOptions, exporter, err := builtInMeterProviderOptions(project, compression, tracerFactory.clientAttributes, opts...)
 		if err != nil {
 			return tracerFactory, err
 		}
 		meterProvider = sdkmetric.NewMeterProvider(mpOptions...)
 
-		isEnableGRPCBuiltInMetrics := strings.EqualFold("false", os.Getenv("SPANNER_DISABLE_DIRECT_ACCESS_GRPC_BUILTIN_METRICS"))
 		if isEnableGRPCBuiltInMetrics {
 			mo := opentelemetry.MetricsOptions{
 				MeterProvider: meterProvider,
@@ -307,7 +309,7 @@ func newBuiltinMetricsTracerFactory(ctx context.Context, dbpath string, metricsP
 		}
 		tracerFactory.enabled = true
 		tracerFactory.shutdown = func(ctx context.Context) {
-			meterProvider.ForceFlush(ctx)
+			exporter.stop()
 			meterProvider.Shutdown(ctx)
 		}
 	} else {
@@ -325,11 +327,11 @@ func newBuiltinMetricsTracerFactory(ctx context.Context, dbpath string, metricsP
 	return tracerFactory, err
 }
 
-func builtInMeterProviderOptions(project, compression string, clientAttributes []attribute.KeyValue, opts ...option.ClientOption) ([]sdkmetric.Option, error) {
+func builtInMeterProviderOptions(project, compression string, clientAttributes []attribute.KeyValue, opts ...option.ClientOption) ([]sdkmetric.Option, *monitoringExporter, error) {
 	allOpts := createExporterOptions(opts...)
 	defaultExporter, err := newMonitoringExporter(context.Background(), project, compression, clientAttributes, allOpts...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var views []sdkmetric.View
 	for _, m := range grpcMetricsToEnable {
@@ -353,7 +355,7 @@ func builtInMeterProviderOptions(project, compression string, clientAttributes [
 			defaultExporter,
 			sdkmetric.WithInterval(defaultSamplePeriod),
 		),
-	), sdkmetric.WithView(views...)}, nil
+	), sdkmetric.WithView(views...)}, defaultExporter, nil
 }
 
 func (tf *builtinMetricsTracerFactory) createInstruments(meter metric.Meter) error {
@@ -435,8 +437,9 @@ func (tf *builtinMetricsTracerFactory) createInstruments(meter metric.Meter) err
 // builtinMetricsTracer is created one per operation.
 // It is used to store metric instruments, attribute values, and other data required to obtain and record them.
 type builtinMetricsTracer struct {
-	ctx            context.Context // Context for the tracer.
-	builtInEnabled bool            // Indicates if built-in metrics are enabled.
+	ctx                       context.Context // Context for the tracer.
+	builtInEnabled            bool            // Indicates if built-in metrics are enabled.
+	isAFEBuiltInMetricEnabled bool
 
 	// clientAttributes are attributes specific to a client instance that do not change across different operations on the client.
 	clientAttributes []attribute.KeyValue
@@ -506,8 +509,14 @@ func (o *opTracer) incrementAttemptCount() {
 }
 
 // setDirectPathUsed sets whether DirectPath was used for the attempt.
-func (a *attemptTracer) setDirectPathUsed(used bool) {
-	a.directPathUsed = used
+func (a *attemptTracer) setDirectPathUsed(ctx context.Context) {
+	peerInfo, ok := peer.FromContext(ctx)
+	if ok && peerInfo.Addr != nil {
+		remoteIP := peerInfo.Addr.String()
+		if strings.HasPrefix(remoteIP, directPathIPV4Prefix) || strings.HasPrefix(remoteIP, directPathIPV6Prefix) {
+			a.directPathUsed = true
+		}
+	}
 }
 
 func (a *attemptTracer) setServerTimingMetrics(metrics map[string]time.Duration) {
@@ -527,10 +536,11 @@ func (tf *builtinMetricsTracerFactory) createBuiltinMetricsTracer(ctx context.Co
 	currOpTracer.setDirectPathEnabled(tf.isDirectPathEnabled)
 
 	return builtinMetricsTracer{
-		ctx:              ctx,
-		builtInEnabled:   tf.enabled,
-		currOp:           &currOpTracer,
-		clientAttributes: tf.clientAttributes,
+		ctx:                       ctx,
+		builtInEnabled:            tf.enabled,
+		currOp:                    &currOpTracer,
+		clientAttributes:          tf.clientAttributes,
+		isAFEBuiltInMetricEnabled: tf.isAFEBuiltInMetricEnabled,
 
 		instrumentOperationLatencies: tf.operationLatencies,
 		instrumentAttemptLatencies:   tf.attemptLatencies,
@@ -581,6 +591,9 @@ func (t *builtinMetricsTracer) recordGFELatency(latency time.Duration) {
 }
 
 func (t *builtinMetricsTracer) recordAFELatency(latency time.Duration) {
+	if !t.isAFEBuiltInMetricEnabled {
+		return
+	}
 	attrs, err := t.toOtelMetricAttrs(metricNameAFELatencies)
 	if err != nil {
 		return
@@ -597,6 +610,9 @@ func (t *builtinMetricsTracer) recordGFEError() {
 }
 
 func (t *builtinMetricsTracer) recordAFEError() {
+	if !t.isAFEBuiltInMetricEnabled {
+		return
+	}
 	attrs, err := t.toOtelMetricAttrs(metricNameAFEConnectivityErrorCount)
 	if err != nil {
 		return

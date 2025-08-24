@@ -312,9 +312,9 @@ func (c *EndpointClient) UndeployModelOperation(name string) *UndeployModelOpera
 }
 
 // MutateDeployedModel updates an existing deployed model. Updatable fields include
-// min_replica_count, max_replica_count, autoscaling_metric_specs,
-// disable_container_logging (v1 only), and enable_container_logging
-// (v1beta1 only).
+// min_replica_count, max_replica_count, required_replica_count,
+// autoscaling_metric_specs, disable_container_logging (v1 only), and
+// enable_container_logging (v1beta1 only).
 func (c *EndpointClient) MutateDeployedModel(ctx context.Context, req *aiplatformpb.MutateDeployedModelRequest, opts ...gax.CallOption) (*MutateDeployedModelOperation, error) {
 	return c.internalClient.MutateDeployedModel(ctx, req, opts...)
 }
@@ -493,7 +493,7 @@ func (c *endpointGRPCClient) Connection() *grpc.ClientConn {
 // use by Google-written clients.
 func (c *endpointGRPCClient) setGoogleClientInfo(keyval ...string) {
 	kv := append([]string{"gl-go", gax.GoVersion}, keyval...)
-	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "grpc", grpc.Version)
+	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "grpc", grpc.Version, "pb", protoVersion)
 	c.xGoogHeaders = []string{
 		"x-goog-api-client", gax.XGoogHeader(kv...),
 	}
@@ -576,7 +576,7 @@ func defaultEndpointRESTClientOptions() []option.ClientOption {
 // use by Google-written clients.
 func (c *endpointRESTClient) setGoogleClientInfo(keyval ...string) {
 	kv := append([]string{"gl-go", gax.GoVersion}, keyval...)
-	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "rest", "UNKNOWN")
+	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "rest", "UNKNOWN", "pb", protoVersion)
 	c.xGoogHeaders = []string{
 		"x-goog-api-client", gax.XGoogHeader(kv...),
 	}
@@ -1561,9 +1561,9 @@ func (c *endpointRESTClient) UndeployModel(ctx context.Context, req *aiplatformp
 }
 
 // MutateDeployedModel updates an existing deployed model. Updatable fields include
-// min_replica_count, max_replica_count, autoscaling_metric_specs,
-// disable_container_logging (v1 only), and enable_container_logging
-// (v1beta1 only).
+// min_replica_count, max_replica_count, required_replica_count,
+// autoscaling_metric_specs, disable_container_logging (v1 only), and
+// enable_container_logging (v1beta1 only).
 func (c *endpointRESTClient) MutateDeployedModel(ctx context.Context, req *aiplatformpb.MutateDeployedModelRequest, opts ...gax.CallOption) (*MutateDeployedModelOperation, error) {
 	m := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true}
 	jsonReq, err := m.Marshal(req)

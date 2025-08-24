@@ -207,7 +207,7 @@ func defaultReservationBlocksRESTClientOptions() []option.ClientOption {
 // use by Google-written clients.
 func (c *reservationBlocksRESTClient) setGoogleClientInfo(keyval ...string) {
 	kv := append([]string{"gl-go", gax.GoVersion}, keyval...)
-	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "rest", "UNKNOWN")
+	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "rest", "UNKNOWN", "pb", protoVersion)
 	c.xGoogHeaders = []string{
 		"x-goog-api-client", gax.XGoogHeader(kv...),
 	}
@@ -238,6 +238,13 @@ func (c *reservationBlocksRESTClient) Get(ctx context.Context, req *computepb.Ge
 		return nil, err
 	}
 	baseUrl.Path += fmt.Sprintf("/compute/v1/projects/%v/zones/%v/reservations/%v/reservationBlocks/%v", req.GetProject(), req.GetZone(), req.GetReservation(), req.GetReservationBlock())
+
+	params := url.Values{}
+	if req != nil && req.View != nil {
+		params.Add("view", fmt.Sprintf("%v", req.GetView()))
+	}
+
+	baseUrl.RawQuery = params.Encode()
 
 	// Build HTTP headers from client and context metadata.
 	hds := []string{"x-goog-request-params", fmt.Sprintf("%s=%v&%s=%v&%s=%v&%s=%v", "project", url.QueryEscape(req.GetProject()), "zone", url.QueryEscape(req.GetZone()), "reservation", url.QueryEscape(req.GetReservation()), "reservation_block", url.QueryEscape(req.GetReservationBlock()))}

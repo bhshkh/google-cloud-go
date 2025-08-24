@@ -461,7 +461,7 @@ func (c *vertexRagDataGRPCClient) Connection() *grpc.ClientConn {
 // use by Google-written clients.
 func (c *vertexRagDataGRPCClient) setGoogleClientInfo(keyval ...string) {
 	kv := append([]string{"gl-go", gax.GoVersion}, keyval...)
-	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "grpc", grpc.Version)
+	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "grpc", grpc.Version, "pb", protoVersion)
 	c.xGoogHeaders = []string{
 		"x-goog-api-client", gax.XGoogHeader(kv...),
 	}
@@ -544,7 +544,7 @@ func defaultVertexRagDataRESTClientOptions() []option.ClientOption {
 // use by Google-written clients.
 func (c *vertexRagDataRESTClient) setGoogleClientInfo(keyval ...string) {
 	kv := append([]string{"gl-go", gax.GoVersion}, keyval...)
-	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "rest", "UNKNOWN")
+	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "rest", "UNKNOWN", "pb", protoVersion)
 	c.xGoogHeaders = []string{
 		"x-goog-api-client", gax.XGoogHeader(kv...),
 	}
@@ -1633,6 +1633,9 @@ func (c *vertexRagDataRESTClient) DeleteRagFile(ctx context.Context, req *aiplat
 
 	params := url.Values{}
 	params.Add("$alt", "json;enum-encoding=int")
+	if req.GetForceDelete() {
+		params.Add("forceDelete", fmt.Sprintf("%v", req.GetForceDelete()))
+	}
 
 	baseUrl.RawQuery = params.Encode()
 

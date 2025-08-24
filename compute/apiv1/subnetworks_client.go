@@ -325,7 +325,7 @@ func defaultSubnetworksRESTClientOptions() []option.ClientOption {
 // use by Google-written clients.
 func (c *subnetworksRESTClient) setGoogleClientInfo(keyval ...string) {
 	kv := append([]string{"gl-go", gax.GoVersion}, keyval...)
-	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "rest", "UNKNOWN")
+	kv = append(kv, "gapic", getVersionClient(), "gax", gax.Version, "rest", "UNKNOWN", "pb", protoVersion)
 	c.xGoogHeaders = []string{
 		"x-goog-api-client", gax.XGoogHeader(kv...),
 	}
@@ -861,6 +861,9 @@ func (c *subnetworksRESTClient) ListUsable(ctx context.Context, req *computepb.L
 		}
 		if req != nil && req.ReturnPartialSuccess != nil {
 			params.Add("returnPartialSuccess", fmt.Sprintf("%v", req.GetReturnPartialSuccess()))
+		}
+		if req != nil && req.ServiceProject != nil {
+			params.Add("serviceProject", fmt.Sprintf("%v", req.GetServiceProject()))
 		}
 
 		baseUrl.RawQuery = params.Encode()
