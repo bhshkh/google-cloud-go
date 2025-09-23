@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -31,7 +32,7 @@ import (
 
 const (
 	// maxBatchSize is the max number of writes to send in a request
-	maxBatchSize = 20
+	maxBatchSize = 2 // original value: 20
 	// maxRetryAttempts is the max number of times to retry a write
 	maxRetryAttempts = 10
 	// defaultStartingMaximumOpsPerSecond is the starting max number of requests to the service per second
@@ -155,6 +156,7 @@ func newBulkWriter(ctx context.Context, c *Client, database string) *BulkWriter 
 // with an error. This method completes when there are no more pending writes
 // in the queue.
 func (bw *BulkWriter) End() {
+	log.Printf("\tlibrary: end: called\n")
 	bw.isOpenLock.Lock()
 	bw.isOpen = false
 	bw.isOpenLock.Unlock()
@@ -302,9 +304,13 @@ func (bw *BulkWriter) write(w *pb.Write) *BulkWriterJob {
 
 // send transmits writes to the service and matches response results to job channels.
 func (bw *BulkWriter) send(i interface{}) {
+	log.Printf("\tlibrary: send: artificial delay in send. Sleeping for 1m ....\n")
+	time.Sleep(1 * time.Minute)
+	log.Printf("\tlibrary: send: transmitting writes to the service\n")
 	bwj := i.([]*BulkWriterJob)
 
 	if len(bwj) == 0 {
+		log.Printf("\tlibrary: send: bwj length is 0\n")
 		return
 	}
 
@@ -313,6 +319,7 @@ func (bw *BulkWriter) send(i interface{}) {
 		ws = append(ws, w.write)
 	}
 
+	log.Printf("\tlibrary: send: Creating BatchWriteRequest\n")
 	bwr := &pb.BatchWriteRequest{
 		Database: bw.database,
 		Writes:   ws,
@@ -321,16 +328,24 @@ func (bw *BulkWriter) send(i interface{}) {
 
 	select {
 	case <-bw.ctx.Done():
+		log.Printf("\tlibrary: send: Received context cancelled error\n")
 		return
 	default:
+		log.Printf("\tlibrary: send: In default\n")
+		// bytes, _ := protojson.MarshalOptions{AllowPartial: true, UseEnumNumbers: true, Multiline: true}.Marshal(bwr)
+		// _ = bytes
+		// fmt.Println("BatchWriteRequest\n" + string(bytes))
+		log.Printf("\tlibrary: send: BatchWrite rpc\n")
 		resp, err := bw.vc.BatchWrite(bw.ctx, bwr)
 		if err != nil {
+			log.Printf("\tlibrary: send: BatchWrite: failed with error %+v\n", err)
 			// Do we need to be selective about what kind of errors we send?
 			for _, j := range bwj {
 				j.setError(err)
 			}
 			return
 		}
+		log.Printf("\tlibrary: send: BatchWrite succeeded\n")
 		// Match write results with BulkWriterJob objects
 		for i, res := range resp.WriteResults {
 			s := resp.Status[i]
