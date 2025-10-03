@@ -1,5 +1,19 @@
 # Changes
 
+## [1.69.1](https://github.com/googleapis/google-cloud-go/compare/dialogflow/v1.69.0...dialogflow/v1.69.1) (2025-09-16)
+
+
+### Bug Fixes
+
+* **dialogflow:** Upgrade gRPC service registration func ([617bb68](https://github.com/googleapis/google-cloud-go/commit/617bb68f41d785126666b9cea1be9fd2d6271515))
+
+## [1.69.0](https://github.com/googleapis/google-cloud-go/compare/dialogflow/v1.68.2...dialogflow/v1.69.0) (2025-07-09)
+
+
+### Features
+
+* **dialogflow/cx:** Add support for generator settings on fulfillment ([98ba6f0](https://github.com/googleapis/google-cloud-go/commit/98ba6f06e69685bca510ca85c12124434f9ba1e8))
+
 ## [1.68.2](https://github.com/googleapis/google-cloud-go/compare/dialogflow/v1.68.1...dialogflow/v1.68.2) (2025-04-15)
 
 

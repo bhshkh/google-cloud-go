@@ -18,32 +18,8 @@
         "aiplatform": {
             "component": "aiplatform"
         },
-        "alloydb": {
-            "component": "alloydb"
-        },
         "analytics": {
             "component": "analytics"
-        },
-        "apigateway": {
-            "component": "apigateway"
-        },
-        "apigeeconnect": {
-            "component": "apigeeconnect"
-        },
-        "apigeeregistry": {
-            "component": "apigeeregistry"
-        },
-        "apihub": {
-            "component": "apihub"
-        },
-        "apikeys": {
-            "component": "apikeys"
-        },
-        "appengine": {
-            "component": "appengine"
-        },
-        "apphub": {
-            "component": "apphub"
         },
         "apps": {
             "component": "apps"
@@ -80,6 +56,9 @@
         },
         "binaryauthorization": {
             "component": "binaryauthorization"
+        },
+        "capacityplanner": {
+            "component": "capacityplanner"
         },
         "certificatemanager": {
             "component": "certificatemanager"
@@ -126,6 +105,9 @@
         "config": {
             "component": "config"
         },
+        "configdelivery": {
+            "component": "configdelivery"
+        },
         "contactcenterinsights": {
             "component": "contactcenterinsights"
         },
@@ -153,9 +135,6 @@
         "dataplex": {
             "component": "dataplex"
         },
-        "dataproc": {
-            "component": "dataproc"
-        },
         "dataqna": {
             "component": "dataqna"
         },
@@ -177,9 +156,6 @@
         "discoveryengine": {
             "component": "discoveryengine"
         },
-        "dlp": {
-            "component": "dlp"
-        },
         "documentai": {
             "component": "documentai"
         },
@@ -195,9 +171,6 @@
         "essentialcontacts": {
             "component": "essentialcontacts"
         },
-        "eventarc": {
-            "component": "eventarc"
-        },
         "filestore": {
             "component": "filestore"
         },
@@ -206,6 +179,9 @@
         },
         "functions": {
             "component": "functions"
+        },
+        "geminidataanalytics": {
+            "component": "geminidataanalytics"
         },
         "gkebackup": {
             "component": "gkebackup"
@@ -246,8 +222,14 @@
         "language": {
             "component": "language"
         },
+        "licensemanager": {
+            "component": "licensemanager"
+        },
         "lifesciences": {
             "component": "lifesciences"
+        },
+        "locationfinder": {
+            "component": "locationfinder"
         },
         "longrunning": {
             "component": "longrunning"
@@ -255,14 +237,14 @@
         "lustre": {
             "component": "lustre"
         },
+        "maintenance": {
+            "component": "maintenance"
+        },
         "managedidentities": {
             "component": "managedidentities"
         },
         "managedkafka": {
             "component": "managedkafka"
-        },
-        "maps": {
-            "component": "maps"
         },
         "mediatranslation": {
             "component": "mediatranslation"
