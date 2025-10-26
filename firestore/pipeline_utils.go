@@ -36,9 +36,7 @@ func toExprOrField(val any) Expr {
 	switch v := val.(type) {
 	case Expr:
 		return v
-	case FieldPath:
-		return FieldOfPath(v)
-	case string:
+	case string, FieldPath:
 		return FieldOf(v)
 	default:
 		return &baseExpr{err: fmt.Errorf("firestore: value must be a string, FieldPath, or Expr, but got %T", val)}
@@ -105,13 +103,11 @@ func fieldsOrSelectablesToSelectables(fieldsOrSelectables ...any) ([]Selectable,
 	for _, f := range fieldsOrSelectables {
 		var s Selectable
 		switch v := f.(type) {
-		case string:
+		case string, FieldPath:
 			if v == "" {
 				return nil, errors.New("firestore: path cannot be empty")
 			}
 			s = FieldOf(v).(*field)
-		case FieldPath:
-			s = FieldOfPath(v).(*field)
 		case Selectable:
 			s = v
 		default:

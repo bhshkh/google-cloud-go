@@ -41,10 +41,8 @@ func newBaseAggregateFunction(name string, fieldOrExpr any) *baseAggregateFuncti
 	if fieldOrExpr != nil {
 		var valueExpr Expr
 		switch value := fieldOrExpr.(type) {
-		case string:
+		case string, FieldPath:
 			valueExpr = FieldOf(value)
-		case FieldPath:
-			valueExpr = FieldOfPath(value)
 		case Expr:
 			valueExpr = value
 		default:

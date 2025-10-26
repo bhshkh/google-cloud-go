@@ -28,27 +28,30 @@ type field struct {
 	fieldPath FieldPath
 }
 
-// FieldOf creates a new field [Expr] from a field path string.
-func FieldOf(path string) Expr {
-	fieldPath, err := parseDotSeparatedString(path)
-	if err != nil {
-		return &field{baseExpr: &baseExpr{err: err}}
+// FieldOf creates a new field [Expr] from a field path string or [FieldPath].
+func FieldOf(path any) Expr {
+	var err error
+	var fp FieldPath
+	switch v := path.(type) {
+	case string:
+		fp, err = parseDotSeparatedString(v)
+		if err != nil {
+			return &field{baseExpr: &baseExpr{err: err}}
+		}
+	case FieldPath:
+		fp = v
+		if err := fp.validate(); err != nil {
+			return &field{baseExpr: &baseExpr{err: err}}
+		}
+	default:
+		return &field{baseExpr: &baseExpr{err: errInvalidArg(path, "string", "FieldPath")}}
 	}
-	return FieldOfPath(fieldPath)
-}
-
-// FieldOfPath creates a new field [Expr] for the given [FieldPath].
-func FieldOfPath(fieldPath FieldPath) Expr {
-	if err := fieldPath.validate(); err != nil {
-		return &field{baseExpr: &baseExpr{err: err}}
-	}
-
 	pbVal := &pb.Value{
 		ValueType: &pb.Value_FieldReferenceValue{
-			FieldReferenceValue: fieldPath.toServiceFieldPath(),
+			FieldReferenceValue: fp.toServiceFieldPath(),
 		},
 	}
-	return &field{fieldPath: fieldPath, baseExpr: &baseExpr{pbVal: pbVal}}
+	return &field{fieldPath: fp, baseExpr: &baseExpr{pbVal: pbVal}}
 }
 
 // getSelectionDetails returns the field path string as the default alias and the field expression itself.

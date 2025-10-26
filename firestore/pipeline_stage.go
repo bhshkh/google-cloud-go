@@ -16,6 +16,7 @@ package firestore
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	pb "cloud.google.com/go/firestore/apiv1/firestorepb"
@@ -36,18 +37,24 @@ func errInvalidArg(v any, expected ...string) error {
 }
 
 const (
-	stageNameAddFields    = "add_fields"
-	stageNameAggregate    = "aggregate"
-	stageNameDistinct     = "distinct"
-	stageNameDocuments    = "documents"
-	stageNameFindNearest  = "find_nearest"
-	stageNameRemoveFields = "remove_fields"
-	stageNameReplace      = "replace_with"
-	stageNameSample       = "sample"
-	stageNameSelect       = "select"
-	stageNameUnion        = "union"
-	stageNameUnnest       = "unnest"
-	stageNameWhere        = "where"
+	stageNameAddFields       = "add_fields"
+	stageNameAggregate       = "aggregate"
+	stageNameCollection      = "collection"
+	stageNameCollectionGroup = "collection_group"
+	stageNameDatabase        = "database"
+	stageNameDistinct        = "distinct"
+	stageNameDocuments       = "documents"
+	stageNameFindNearest     = "find_nearest"
+	stageNameLimit           = "limit"
+	stageNameOffset          = "offset"
+	stageNameRemoveFields    = "remove_fields"
+	stageNameReplace         = "replace_with"
+	stageNameSample          = "sample"
+	stageNameSelect          = "select"
+	stageNameSort            = "sort"
+	stageNameUnion           = "union"
+	stageNameUnnest          = "unnest"
+	stageNameWhere           = "where"
 )
 
 // internal interface for pipeline stages.
@@ -56,23 +63,29 @@ type pipelineStage interface {
 	name() string // For identification, logging, and potential validation
 }
 
-// inputStageCollection returns all documents from the entire collection.
+// / inputStageCollection returns all documents from the entire collection.
 type inputStageCollection struct {
-	path string
+	path    string
+	options *CollectionOptions
 }
 
-func newInputStageCollection(path string) *inputStageCollection {
+func newInputStageCollection(path string, options *CollectionOptions) *inputStageCollection {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	return &inputStageCollection{path: path}
+	return &inputStageCollection{path: path, options: options}
 }
-func (s *inputStageCollection) name() string { return "collection" }
+func (s *inputStageCollection) name() string { return stageNameCollection }
 func (s *inputStageCollection) toProto() (*pb.Pipeline_Stage, error) {
 	arg := &pb.Value{ValueType: &pb.Value_ReferenceValue{ReferenceValue: s.path}}
+	optionsPb, err := optionsToProto(s.options)
+	if err != nil {
+		return nil, err
+	}
 	return &pb.Pipeline_Stage{
-		Name: s.name(),
-		Args: []*pb.Value{arg},
+		Name:    s.name(),
+		Args:    []*pb.Value{arg},
+		Options: optionsPb,
 	}, nil
 }
 
@@ -80,18 +93,24 @@ func (s *inputStageCollection) toProto() (*pb.Pipeline_Stage, error) {
 type inputStageCollectionGroup struct {
 	collectionID string
 	ancestor     string
+	options      *CollectionGroupOptions
 }
 
-func newInputStageCollectionGroup(ancestor, collectionID string) *inputStageCollectionGroup {
-	return &inputStageCollectionGroup{ancestor: ancestor, collectionID: collectionID}
+func newInputStageCollectionGroup(ancestor, collectionID string, options *CollectionGroupOptions) *inputStageCollectionGroup {
+	return &inputStageCollectionGroup{ancestor: ancestor, collectionID: collectionID, options: options}
 }
-func (s *inputStageCollectionGroup) name() string { return "collection_group" }
+func (s *inputStageCollectionGroup) name() string { return stageNameCollectionGroup }
 func (s *inputStageCollectionGroup) toProto() (*pb.Pipeline_Stage, error) {
 	ancestor := &pb.Value{ValueType: &pb.Value_ReferenceValue{ReferenceValue: s.ancestor}}
 	collectionID := &pb.Value{ValueType: &pb.Value_StringValue{StringValue: s.collectionID}}
+	optionsPb, err := optionsToProto(s.options)
+	if err != nil {
+		return nil, err
+	}
 	return &pb.Pipeline_Stage{
-		Name: s.name(),
-		Args: []*pb.Value{ancestor, collectionID},
+		Name:    s.name(),
+		Args:    []*pb.Value{ancestor, collectionID},
+		Options: optionsPb,
 	}, nil
 }
 
@@ -101,7 +120,7 @@ type inputStageDatabase struct{}
 func newInputStageDatabase() *inputStageDatabase {
 	return &inputStageDatabase{}
 }
-func (s *inputStageDatabase) name() string { return "database" }
+func (s *inputStageDatabase) name() string { return stageNameDatabase }
 func (s *inputStageDatabase) toProto() (*pb.Pipeline_Stage, error) {
 	return &pb.Pipeline_Stage{
 		Name: s.name(),
@@ -207,10 +226,8 @@ type findNearestStage struct {
 func newFindNearestStage(vectorField any, queryVector any, measure PipelineDistanceMeasure, options *PipelineFindNearestOptions) (*findNearestStage, error) {
 	var propertyExpr Expr
 	switch v := vectorField.(type) {
-	case string:
+	case string, FieldPath:
 		propertyExpr = FieldOf(v)
-	case FieldPath:
-		propertyExpr = FieldOfPath(v)
 	case Expr:
 		propertyExpr = v
 	default:
@@ -261,7 +278,7 @@ type limitStage struct {
 func newLimitStage(limit int) *limitStage {
 	return &limitStage{limit: limit}
 }
-func (s *limitStage) name() string { return "limit" }
+func (s *limitStage) name() string { return stageNameLimit }
 func (s *limitStage) toProto() (*pb.Pipeline_Stage, error) {
 	arg := &pb.Value{ValueType: &pb.Value_IntegerValue{IntegerValue: int64(s.limit)}}
 	return &pb.Pipeline_Stage{
@@ -277,7 +294,7 @@ type offsetStage struct {
 func newOffsetStage(offset int) *offsetStage {
 	return &offsetStage{offset: offset}
 }
-func (s *offsetStage) name() string { return "offset" }
+func (s *offsetStage) name() string { return stageNameOffset }
 func (s *offsetStage) toProto() (*pb.Pipeline_Stage, error) {
 	arg := &pb.Value{ValueType: &pb.Value_IntegerValue{IntegerValue: int64(s.offset)}}
 	return &pb.Pipeline_Stage{
@@ -294,10 +311,8 @@ func newRemoveFieldsStage(fieldpaths ...any) (*removeFieldsStage, error) {
 	fields := make([]Expr, len(fieldpaths))
 	for i, fp := range fieldpaths {
 		switch v := fp.(type) {
-		case string:
+		case string, FieldPath:
 			fields[i] = FieldOf(v)
-		case FieldPath:
-			fields[i] = FieldOfPath(v)
 		default:
 			return nil, errInvalidArg(fp, "string", "FieldPath")
 		}
@@ -326,10 +341,8 @@ type replaceStage struct {
 func newReplaceStage(fieldOrSelectable any) (*replaceStage, error) {
 	var expr Expr
 	switch v := fieldOrSelectable.(type) {
-	case string:
+	case string, FieldPath:
 		expr = FieldOf(v)
-	case FieldPath:
-		expr = FieldOfPath(v)
 	case Selectable:
 		_, expr = v.getSelectionDetails()
 	default:
@@ -343,7 +356,7 @@ func newReplaceStage(fieldOrSelectable any) (*replaceStage, error) {
 		stageName: stageNameReplace,
 		stagePb: &pb.Pipeline_Stage{
 			Name: stageNameReplace,
-			Args: []*pb.Value{exprPb, &pb.Value{ValueType: &pb.Value_StringValue{StringValue: "full_replace"}}},
+			Args: []*pb.Value{exprPb, {ValueType: &pb.Value_StringValue{StringValue: "full_replace"}}},
 		},
 	}}, nil
 }
@@ -393,7 +406,7 @@ type sortStage struct {
 func newSortStage(orders ...Ordering) *sortStage {
 	return &sortStage{orders: orders}
 }
-func (s *sortStage) name() string { return "sort" }
+func (s *sortStage) name() string { return stageNameSort }
 func (s *sortStage) toProto() (*pb.Pipeline_Stage, error) {
 	sortOrders := make([]*pb.Value, len(s.orders))
 	for i, so := range s.orders {
@@ -459,9 +472,7 @@ func newUnnestStage(fieldExpr Expr, alias string, opts *UnnestOptions) (*unnestS
 	if opts != nil && opts.IndexField != nil {
 		var indexFieldExpr Expr
 		switch v := opts.IndexField.(type) {
-		case FieldPath:
-			indexFieldExpr = FieldOfPath(v)
-		case string:
+		case string, FieldPath:
 			indexFieldExpr = FieldOf(v)
 		default:
 			return nil, errInvalidArg(opts.IndexField, "string", "FieldPath")
@@ -520,4 +531,63 @@ func newWhereStage(condition BooleanExpr) (*whereStage, error) {
 		stageName: stageNameWhere,
 		stagePb:   newUnaryStage(stageNameWhere, argsPb),
 	}}, nil
+}
+
+// RawStageOptions holds the options for a RawStage.
+type RawStageOptions map[string]any
+
+// RawStage represents a pipeline stage that is not yet implemented in the SDK.
+// This allows users to call stages that are supported by the Firestore backend
+// but not yet available in the current SDK version.
+type RawStage struct {
+	stageName string
+	args      []any
+	options   RawStageOptions
+}
+
+// NewRawStage creates a new RawStage with the given name.
+func NewRawStage(name string) *RawStage {
+	return &RawStage{stageName: name}
+}
+
+// WithArguments sets the arguments for the RawStage.
+func (s *RawStage) WithArguments(args ...any) *RawStage {
+	s.args = args
+	return s
+}
+
+// WithOptions sets the options for the RawStage.
+func (s *RawStage) WithOptions(options RawStageOptions) *RawStage {
+	s.options = options
+	return s
+}
+
+func (s *RawStage) name() string { return s.stageName }
+
+func (s *RawStage) toProto() (*pb.Pipeline_Stage, error) {
+	argsPb := make([]*pb.Value, len(s.args))
+	for i, arg := range s.args {
+		val, _, err := toProtoValue(reflect.ValueOf(arg))
+		if err != nil {
+			return nil, fmt.Errorf("firestore: error converting raw stage argument %d: %w", i, err)
+		}
+		argsPb[i] = val
+	}
+
+	optionsPb := make(map[string]*pb.Value)
+	if s.options != nil {
+		for key, val := range s.options {
+			valPb, _, err := toProtoValue(reflect.ValueOf(val))
+			if err != nil {
+				return nil, fmt.Errorf("firestore: error converting raw stage option %q: %w", key, err)
+			}
+			optionsPb[key] = valPb
+		}
+	}
+
+	return &pb.Pipeline_Stage{
+		Name:    s.stageName,
+		Args:    argsPb,
+		Options: optionsPb,
+	}, nil
 }
