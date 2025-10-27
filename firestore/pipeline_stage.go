@@ -66,10 +66,10 @@ type pipelineStage interface {
 // / inputStageCollection returns all documents from the entire collection.
 type inputStageCollection struct {
 	path    string
-	options *CollectionOptions
+	options *collectionSettings
 }
 
-func newInputStageCollection(path string, options *CollectionOptions) *inputStageCollection {
+func newInputStageCollection(path string, options *collectionSettings) *inputStageCollection {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
@@ -93,10 +93,10 @@ func (s *inputStageCollection) toProto() (*pb.Pipeline_Stage, error) {
 type inputStageCollectionGroup struct {
 	collectionID string
 	ancestor     string
-	options      *CollectionGroupOptions
+	options      *collectionGroupSettings
 }
 
-func newInputStageCollectionGroup(ancestor, collectionID string, options *CollectionGroupOptions) *inputStageCollectionGroup {
+func newInputStageCollectionGroup(ancestor, collectionID string, options *collectionGroupSettings) *inputStageCollectionGroup {
 	return &inputStageCollectionGroup{ancestor: ancestor, collectionID: collectionID, options: options}
 }
 func (s *inputStageCollectionGroup) name() string { return stageNameCollectionGroup }

@@ -53,7 +53,7 @@ func newPipeline(client *Client, initialStage pipelineStage) *Pipeline {
 
 // executeSettings holds the options for executing a pipeline.
 type executeSettings struct {
-	ExplainOptions *ExecuteExplainOptions
+	ExplainOptions *executeExplainOptions
 	IndexMode      string
 }
 
@@ -89,15 +89,15 @@ const (
 	ExecutionModeAnalyze ExecutionMode = "analyze"
 )
 
-// ExecuteExplainOptions are options for explaining a pipeline execution.
-type ExecuteExplainOptions struct {
+// executeExplainOptions are options for explaining a pipeline execution.
+type executeExplainOptions struct {
 	Mode ExecutionMode
 }
 
-// WithExecuteExplainOptions sets the explain options for the pipeline execution.
-func WithExecuteExplainOptions(opts *ExecuteExplainOptions) ExecuteOption {
+// WithExplainMode sets the execution mode for pipeline explain.
+func WithExplainMode(mode ExecutionMode) ExecuteOption {
 	return newFuncExecuteOption(func(eo *executeSettings) {
-		eo.ExplainOptions = opts
+		eo.ExplainOptions = &executeExplainOptions{Mode: mode}
 	})
 }
 

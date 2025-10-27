@@ -42,19 +42,77 @@ func (ch CollectionHints) WithIgnoreIndexFields(fields ...string) CollectionHint
 	return ch
 }
 
-// CollectionOptions provides options for the Collection stage.
-type CollectionOptions struct {
+// CollectionOption is an option for a Collection pipeline stage.
+type CollectionOption interface {
+	apply(co *collectionSettings)
+}
+
+type collectionSettings struct {
 	Hints CollectionHints
+}
+
+// funcCollectionOption wraps a function that modifies collectionSettings
+// into an implementation of the CollectionOption interface.
+type funcCollectionOption struct {
+	f func(*collectionSettings)
+}
+
+func (fco *funcCollectionOption) apply(cs *collectionSettings) {
+	fco.f(cs)
+}
+
+func newFuncCollectionOption(f func(*collectionSettings)) *funcCollectionOption {
+	return &funcCollectionOption{
+		f: f,
+	}
+}
+
+// WithCollectionHints specifies hints for the query planner.
+func WithCollectionHints(hints CollectionHints) CollectionOption {
+	return newFuncCollectionOption(func(cs *collectionSettings) {
+		cs.Hints = hints
+	})
 }
 
 // Collection creates a new [Pipeline] that operates on the specified Firestore collection.
-func (ps *PipelineSource) Collection(path string, opts *CollectionOptions) *Pipeline {
-	return newPipeline(ps.client, newInputStageCollection(path, opts))
+func (ps *PipelineSource) Collection(path string, opts ...CollectionOption) *Pipeline {
+	cs := &collectionSettings{}
+	for _, opt := range opts {
+		opt.apply(cs)
+	}
+	return newPipeline(ps.client, newInputStageCollection(path, cs))
 }
 
-// CollectionGroupOptions provides options for the CollectionGroup stage.
-type CollectionGroupOptions struct {
+// CollectionGroupOption is an option for a CollectionGroup pipeline stage.
+type CollectionGroupOption interface {
+	apply(co *collectionGroupSettings)
+}
+
+type collectionGroupSettings struct {
 	Hints CollectionHints
+}
+
+// funcCollectionGroupOption wraps a function that modifies collectionGroupSettings
+// into an implementation of the CollectionGroupOption interface.
+type funcCollectionGroupOption struct {
+	f func(*collectionGroupSettings)
+}
+
+func (fcgo *funcCollectionGroupOption) apply(cgs *collectionGroupSettings) {
+	fcgo.f(cgs)
+}
+
+func newFuncCollectionGroupOption(f func(*collectionGroupSettings)) *funcCollectionGroupOption {
+	return &funcCollectionGroupOption{
+		f: f,
+	}
+}
+
+// WithCollectionGroupHints specifies hints for the query planner.
+func WithCollectionGroupHints(hints CollectionHints) CollectionGroupOption {
+	return newFuncCollectionGroupOption(func(cgs *collectionGroupSettings) {
+		cgs.Hints = hints
+	})
 }
 
 // CollectionGroup creates a new [Pipeline] that operates on all documents in a group
@@ -66,8 +124,12 @@ type CollectionGroupOptions struct {
 //
 // CollectionGroup can be used to query across all "Cities" regardless of
 // its parent "Countries".
-func (ps *PipelineSource) CollectionGroup(collectionID string, opts *CollectionGroupOptions) *Pipeline {
-	return newPipeline(ps.client, newInputStageCollectionGroup("", collectionID, opts))
+func (ps *PipelineSource) CollectionGroup(collectionID string, opts ...CollectionGroupOption) *Pipeline {
+	cgs := &collectionGroupSettings{}
+	for _, opt := range opts {
+		opt.apply(cgs)
+	}
+	return newPipeline(ps.client, newInputStageCollectionGroup("", collectionID, cgs))
 }
 
 // Database creates a new [Pipeline] that operates on all documents in the Firestore database.

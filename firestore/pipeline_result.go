@@ -230,7 +230,7 @@ func (es *ExplainStats) GetText() (string, error) {
 		return "", fmt.Errorf("firestore: failed to unmarshal Any to wrapperspb.StringValue: %w", err)
 	}
 
-	return es.statsPb.String(), nil
+	return data.GetValue(), nil
 }
 
 // pipelineResultIteratorInternal is an unexported interface defining the core iteration logic.
@@ -299,7 +299,6 @@ func (it *streamPipelineResultIterator) next() (_ *PipelineResult, err error) {
 		var res *pb.ExecutePipelineResponse
 		for {
 			res, err = it.streamClient.Recv()
-			it.statsPb = res.GetExplainStats()
 			if err == io.EOF {
 				return nil, iterator.Done
 			}
@@ -309,6 +308,7 @@ func (it *streamPipelineResultIterator) next() (_ *PipelineResult, err error) {
 			if res.GetResults() != nil {
 				it.currResp = res
 				it.currRespResultsIdx = 0
+				it.statsPb = res.GetExplainStats()
 				break
 			}
 			// No results => partial progress; keep receiving
