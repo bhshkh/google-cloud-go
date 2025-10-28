@@ -119,7 +119,6 @@ type Expr interface {
 	ToLower() Expr
 	ToUpper() Expr
 	Trim() Expr
-	StringSplit(separator any) Expr
 
 	// Type functions
 	IsNaN() BooleanExpr
@@ -225,7 +224,6 @@ func (b *baseExpr) Substring(index, offset any) Expr         { return Substring(
 func (b *baseExpr) ToLower() Expr                            { return ToLower(b) }
 func (b *baseExpr) ToUpper() Expr                            { return ToUpper(b) }
 func (b *baseExpr) Trim() Expr                               { return Trim(b) }
-func (b *baseExpr) StringSplit(separator any) Expr           { return StringSplit(b, separator) }
 
 // Type functions
 func (b *baseExpr) IsNaN() BooleanExpr     { return IsNaN(b) }

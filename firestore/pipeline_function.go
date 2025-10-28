@@ -272,11 +272,7 @@ func Array(elements ...any) Expr {
 }
 
 func ArrayFromSlice[T any](elements []T) Expr {
-	myAnys := make([]any, len(elements))
-	for i, v := range elements {
-		myAnys[i] = v
-	}
-	return Array(myAnys...)
+	return newBaseFunction("array", toExprsFromSlice(elements))
 }
 
 // ArrayGet creates an expression that retrieves an element from an array at a specified index.
@@ -554,18 +550,6 @@ func ToUpper(exprOrFieldPath any) Expr {
 //	Trim("email")
 func Trim(exprOrFieldPath any) Expr {
 	return newBaseFunction("trim", []Expr{asFieldExpr(exprOrFieldPath)})
-}
-
-// StringSplit creates an expression that splits a string into an array of strings based on a separator.
-// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a string.
-// - separator is the string to split on.
-//
-// Example:
-//
-//	// Split the 'tags' string by commas.
-//	StringSplit("tags", ",")
-func StringSplit(exprOrFieldPath any, separator any) Expr {
-	return newBaseFunction("string_split", []Expr{asFieldExpr(exprOrFieldPath), asStringExpr(separator)})
 }
 
 // CosineDistance creates an expression that calculates the cosine distance between two vectors.

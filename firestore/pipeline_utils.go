@@ -41,22 +41,31 @@ func toExprs(val []any) []Expr {
 	return exprs
 }
 
+func toExprsFromSlice[T any](val []T) []Expr {
+	exprs := make([]Expr, len(val))
+	for i, v := range val {
+		exprs[i] = toExprOrConstant(v)
+	}
+	return exprs
+}
+
 // val should be single Expr or array of Expr/constants
-func toExprOrExprs(val any) []Expr {
+func asArrayFunctionExpr(val any) Expr {
 	if expr, ok := val.(Expr); ok {
-		return []Expr{expr}
+		return expr
 	}
 
 	arrayVal := reflect.ValueOf(val)
 	if arrayVal.Kind() != reflect.Slice {
-		return []Expr{&baseExpr{err: fmt.Errorf("firestore: value must be a slice or Expr, but got %T", val)}}
+		return &baseExpr{err: fmt.Errorf("firestore: value must be a slice or Expr, but got %T", val)}
 	}
 
-	exprs := make([]Expr, arrayVal.Len())
+	// Convert the slice of any to []Expr
+	var exprs []Expr
 	for i := 0; i < arrayVal.Len(); i++ {
-		exprs[i] = toExprOrConstant(arrayVal.Index(i).Interface())
+		exprs = append(exprs, toExprOrConstant(arrayVal.Index(i).Interface()))
 	}
-	return exprs
+	return newBaseFunction("array", exprs)
 }
 
 // asFieldExpr converts a plain Go string or FieldPath into a field expression.
