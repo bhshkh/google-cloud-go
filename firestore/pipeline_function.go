@@ -39,7 +39,6 @@ var _ Function = (*baseFunction)(nil)
 func newBaseFunction(name string, params []Expr) *baseFunction {
 	argsPbVals := make([]*pb.Value, 0, len(params))
 	for i, param := range params {
-
 		paramExpr := asFieldExpr(param)
 		pbVal, err := paramExpr.toProto()
 		if err != nil {
@@ -58,8 +57,8 @@ func newBaseFunction(name string, params []Expr) *baseFunction {
 }
 
 // Add creates an expression that adds two expressions together, returning it as an Expr.
-// - left can be a field path string, [FieldPath] or [Expr].
-// - right can be a numeric constant or a numeric [Expr].
+//   - left can be a field path string, [FieldPath] or [Expr].
+//   - right can be a numeric constant or a numeric [Expr].
 //
 // Example:
 //
@@ -73,8 +72,8 @@ func Add(left, right any) Expr {
 }
 
 // Subtract creates an expression that subtracts the right expression from the left expression, returning it as an Expr.
-// - left can be a field path string, [FieldPath] or [Expr].
-// - right can be a constant or an [Expr].
+//   - left can be a field path string, [FieldPath] or [Expr].
+//   - right can be a constant or an [Expr].
 //
 // Example:
 //
@@ -88,8 +87,8 @@ func Subtract(left, right any) Expr {
 }
 
 // Multiply creates an expression that multiplies the left and right expressions, returning it as an Expr.
-// - left can be a field path string, [FieldPath] or [Expr].
-// - right can be a constant or an [Expr].
+//   - left can be a field path string, [FieldPath] or [Expr].
+//   - right can be a constant or an [Expr].
 //
 // Example:
 //
@@ -103,8 +102,8 @@ func Multiply(left, right any) Expr {
 }
 
 // Divide creates an expression that divides the left expression by the right expression, returning it as an Expr.
-// - left can be a field path string, [FieldPath] or [Expr].
-// - right can be a constant or an [Expr].
+//   - left can be a field path string, [FieldPath] or [Expr].
+//   - right can be a constant or an [Expr].
 //
 // Example:
 //
@@ -118,7 +117,7 @@ func Divide(left, right any) Expr {
 }
 
 // Abs creates an expression that is the absolute value of the input field or expression.
-// - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
+//   - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
 //
 // Example:
 //
@@ -129,7 +128,7 @@ func Abs(numericExprOrFieldPath any) Expr {
 }
 
 // Floor creates an expression that is the largest integer that isn't less than the input field or expression.
-// - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
+//   - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
 //
 // Example:
 //
@@ -140,7 +139,7 @@ func Floor(numericExprOrFieldPath any) Expr {
 }
 
 // Ceil creates an expression that is the smallest integer that isn't less than the input field or expression.
-// - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
+//   - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
 //
 // Example:
 //
@@ -151,7 +150,7 @@ func Ceil(numericExprOrFieldPath any) Expr {
 }
 
 // Exp creates an expression that is the Euler's number e raised to the power of the input field or expression.
-// - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
+//   - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
 //
 // Example:
 //
@@ -162,8 +161,8 @@ func Exp(numericExprOrFieldPath any) Expr {
 }
 
 // Log creates an expression that is logarithm of the left expression to base as the right expression, returning it as an Expr.
-// - left can be a field path string, [FieldPath] or [Expr].
-// - right can be a constant or an [Expr].
+//   - left can be a field path string, [FieldPath] or [Expr].
+//   - right can be a constant or an [Expr].
 //
 // Example:
 //
@@ -177,7 +176,7 @@ func Log(left, right any) Expr {
 }
 
 // Log10 creates an expression that is the base 10 logarithm of the input field or expression.
-// - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
+//   - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
 //
 // Example:
 //
@@ -188,7 +187,7 @@ func Log10(numericExprOrFieldPath any) Expr {
 }
 
 // Ln creates an expression that is the natural logarithm (base e) of the input field or expression.
-// - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
+//   - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
 //
 // Example:
 //
@@ -199,8 +198,8 @@ func Ln(numericExprOrFieldPath any) Expr {
 }
 
 // Mod creates an expression that computes the modulo of the left expression by the right expression, returning it as an Expr.
-// - left can be a field path string, [FieldPath] or [Expr].
-// - right can be a constant or an [Expr].
+//   - left can be a field path string, [FieldPath] or [Expr].
+//   - right can be a constant or an [Expr].
 //
 // Example:
 //
@@ -214,8 +213,8 @@ func Mod(left, right any) Expr {
 }
 
 // Pow creates an expression that computes the left expression raised to the power of the right expression, returning it as an Expr.
-// - left can be a field path string, [FieldPath] or [Expr].
-// - right can be a constant or an [Expr].
+//   - left can be a field path string, [FieldPath] or [Expr].
+//   - right can be a constant or an [Expr].
 //
 // Example:
 //
@@ -229,7 +228,7 @@ func Pow(left, right any) Expr {
 }
 
 // Round creates an expression that rounds the input field or expression to nearest integer.
-// - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
+//   - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
 //
 // Example:
 //
@@ -240,7 +239,7 @@ func Round(numericExprOrFieldPath any) Expr {
 }
 
 // Sqrt creates an expression that is the square root of the input field or expression.
-// - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
+//   - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that returns a number when evaluated.
 //
 // Example:
 //
@@ -250,10 +249,108 @@ func Sqrt(numericExprOrFieldPath any) Expr {
 	return newBaseFunction("sqrt", []Expr{asFieldExpr(numericExprOrFieldPath)})
 }
 
+// ArrayLength creates an expression that calculates the length of an array.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to an array.
+//
+// Example:
+//
+//	// Get the length of the 'tags' array field.
+//	ArrayLength("tags")
+func ArrayLength(exprOrFieldPath any) Expr {
+	return newBaseFunction("array_length", []Expr{asFieldExpr(exprOrFieldPath)})
+}
+
+// Array creates an expression that represents a Firestore array.
+// - elements can be any number of values or expressions that will form the elements of the array.
+//
+// Example:
+//
+//	// Create an array of numbers.
+//	Array(1, 2, 3)
+func Array(elements ...any) Expr {
+	return newBaseFunction("array", toExprs(elements))
+}
+
+func ArrayFromSlice[T any](elements []T) Expr {
+	myAnys := make([]any, len(elements))
+	for i, v := range elements {
+		myAnys[i] = v
+	}
+	return Array(myAnys...)
+}
+
+// ArrayGet creates an expression that retrieves an element from an array at a specified index.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to an array.
+// - offset is the 0-based index of the element to retrieve.
+//
+// Example:
+//
+//	// Get the first element of the 'tags' array field.
+//	ArrayGet("tags", 0)
+func ArrayGet(exprOrFieldPath any, offset any) Expr {
+	return newBaseFunction("array_get", []Expr{asFieldExpr(exprOrFieldPath), asInt64Expr(offset)})
+}
+
+// ArrayReverse creates an expression that reverses the order of elements in an array.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to an array.
+//
+// Example:
+//
+//	// Reverse the 'tags' array.
+//	ArrayReverse("tags")
+func ArrayReverse(exprOrFieldPath any) Expr {
+	return newBaseFunction("array_reverse", []Expr{asFieldExpr(exprOrFieldPath)})
+}
+
+// ArrayConcat creates an expression that concatenates multiple arrays into a single array.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to an array.
+// - otherArrays are the other arrays to concatenate.
+//
+// Example:
+//
+//	// Concatenate the 'tags' and 'categories' array fields.
+//	ArrayConcat("tags", FieldOf("categories"))
+func ArrayConcat(exprOrFieldPath any, otherArrays ...any) Expr {
+	return newBaseFunction("array_concat", append([]Expr{asFieldExpr(exprOrFieldPath)}, toExprs(otherArrays)...))
+}
+
+// ArraySum creates an expression that calculates the sum of all elements in a numeric array.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a numeric array.
+//
+// Example:
+//
+//	// Calculate the sum of the 'scores' array.
+//	ArraySum("scores")
+func ArraySum(exprOrFieldPath any) Expr {
+	return newBaseFunction("sum", []Expr{asFieldExpr(exprOrFieldPath)})
+}
+
+// ArrayMaximum creates an expression that finds the maximum element in a numeric array.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a numeric array.
+//
+// Example:
+//
+//	// Find the maximum value in the 'scores' array.
+//	ArrayMaximum("scores")
+func ArrayMaximum(exprOrFieldPath any) Expr {
+	return newBaseFunction("maximum", []Expr{asFieldExpr(exprOrFieldPath)})
+}
+
+// ArrayMinimum creates an expression that finds the minimum element in a numeric array.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a numeric array.
+//
+// Example:
+//
+//	// Find the minimum value in the 'scores' array.
+//	ArrayMinimum("scores")
+func ArrayMinimum(exprOrFieldPath any) Expr {
+	return newBaseFunction("minimum", []Expr{asFieldExpr(exprOrFieldPath)})
+}
+
 // TimestampAdd creates an expression that adds a specified amount of time to a timestamp.
-// - timestamp can be a field path string, [FieldPath] or [Expr].
-// - unit can be a string or an [Expr]. Valid units include "microsecond", "millisecond", "second", "minute", "hour" and "day".
-// - amount can be an int, int32, int64 or [Expr].
+//   - timestamp can be a field path string, [FieldPath] or [Expr].
+//   - unit can be a string or an [Expr]. Valid units include "microsecond", "millisecond", "second", "minute", "hour" and "day".
+//   - amount can be an int, int32, int64 or [Expr].
 //
 // Example:
 //
@@ -264,9 +361,9 @@ func TimestampAdd(timestamp, unit, amount any) Expr {
 }
 
 // TimestampSubtract creates an expression that subtracts a specified amount of time from a timestamp.
-// - timestamp can be a field path string, [FieldPath] or [Expr].
-// - unit can be a string or an [Expr]. Valid units include "microsecond", "millisecond", "second", "minute", "hour" and "day".
-// - amount can be an int, int32, int64 or [Expr].
+//   - timestamp can be a field path string, [FieldPath] or [Expr].
+//   - unit can be a string or an [Expr]. Valid units include "microsecond", "millisecond", "second", "minute", "hour" and "day".
+//   - amount can be an int, int32, int64 or [Expr].
 //
 // Example:
 //
@@ -278,44 +375,242 @@ func TimestampSubtract(timestamp, unit, amount any) Expr {
 
 // TimestampToUnixMicros creates an expression that converts a timestamp expression to the number of microseconds since
 // the Unix epoch (1970-01-01 00:00:00 UTC).
-// - timestamp can be a field path string, [FieldPath] or [Expr].
+//   - timestamp can be a field path string, [FieldPath] or [Expr].
+//
+// Example:
+//
+//	// Convert the 'last_updated' field to microseconds.
+//	TimestampToUnixMicros("last_updated")
 func TimestampToUnixMicros(timestamp any) Expr {
 	return newBaseFunction("timestamp_to_unix_micros", []Expr{asFieldExpr(timestamp)})
 }
 
 // TimestampToUnixMillis creates an expression that converts a timestamp expression to the number of milliseconds since
 // the Unix epoch (1970-01-01 00:00:00 UTC).
-// - timestamp can be a field path string, [FieldPath] or [Expr].
+//   - timestamp can be a field path string, [FieldPath] or [Expr].
+//
+// Example:
+//
+//	// Convert the 'last_updated' field to milliseconds.
+//	TimestampToUnixMillis("last_updated")
 func TimestampToUnixMillis(timestamp any) Expr {
 	return newBaseFunction("timestamp_to_unix_millis", []Expr{asFieldExpr(timestamp)})
 }
 
 // TimestampToUnixSeconds creates an expression that converts a timestamp expression to the number of seconds since
 // the Unix epoch (1970-01-01 00:00:00 UTC).
-// - timestamp can be a field path string, [FieldPath] or [Expr].
+//   - timestamp can be a field path string, [FieldPath] or [Expr].
+//
+// Example:
+//
+//	// Convert the 'last_updated' field to seconds.
+//	TimestampToUnixSeconds("last_updated")
 func TimestampToUnixSeconds(timestamp any) Expr {
 	return newBaseFunction("timestamp_to_unix_seconds", []Expr{asFieldExpr(timestamp)})
 }
 
 // UnixMicrosToTimestamp creates an expression that converts a Unix timestamp in microseconds to a Firestore timestamp.
-// - micros can be a field path string, [FieldPath] or [Expr].
+//   - micros can be a field path string, [FieldPath] or [Expr].
+//
+// Example:
+//
+//	// Convert the 'login_time_micros' field to a timestamp.
+//	UnixMicrosToTimestamp("login_time_micros")
 func UnixMicrosToTimestamp(micros any) Expr {
 	return newBaseFunction("unix_micros_to_timestamp", []Expr{asFieldExpr(micros)})
 }
 
 // UnixMillisToTimestamp creates an expression that converts a Unix timestamp in milliseconds to a Firestore timestamp.
-// - millis can be a field path string, [FieldPath] or [Expr].
+//   - millis can be a field path string, [FieldPath] or [Expr].
+//
+// Example:
+//
+//	// Convert the 'login_time_millis' field to a timestamp.
+//	UnixMillisToTimestamp("login_time_millis")
 func UnixMillisToTimestamp(millis any) Expr {
 	return newBaseFunction("unix_millis_to_timestamp", []Expr{asFieldExpr(millis)})
 }
 
 // UnixSecondsToTimestamp creates an expression that converts a Unix timestamp in seconds to a Firestore timestamp.
-// - seconds can be a field path string, [FieldPath] or [Expr].
+//   - seconds can be a field path string, [FieldPath] or [Expr].
+//
+// Example:
+//
+//	// Convert the 'login_time_seconds' field to a timestamp.
+//	UnixSecondsToTimestamp("login_time_seconds")
 func UnixSecondsToTimestamp(seconds any) Expr {
 	return newBaseFunction("unix_seconds_to_timestamp", []Expr{asFieldExpr(seconds)})
 }
 
 // CurrentTimestamp creates an expression that returns the current timestamp.
+//
+// Example:
+//
+//	// Get the current timestamp.
+//	CurrentTimestamp()
 func CurrentTimestamp() Expr {
 	return newBaseFunction("current_timestamp", []Expr{})
+}
+
+// ByteLength creates an expression that calculates the length of a string represented by a field or [Expr] in UTF-8
+// bytes, or just the length of a Blob.
+//   - exprOrFieldPath can be a field path string, [FieldPath] or [Expr].
+//
+// Example:
+//
+//	// Get the byte length of the 'name' field.
+//	ByteLength("name")
+func ByteLength(exprOrFieldPath any) Expr {
+	return newBaseFunction("byte_length", []Expr{asFieldExpr(exprOrFieldPath)})
+}
+
+// CharLength creates an expression that calculates the character length of a string field or expression in UTF8.
+//   - exprOrFieldPath can be a field path string, [FieldPath] or [Expr].
+//
+// Example:
+//
+//	// Get the character length of the 'name' field.
+//	CharLength("name")
+func CharLength(exprOrFieldPath any) Expr {
+	return newBaseFunction("char_length", []Expr{asFieldExpr(exprOrFieldPath)})
+}
+
+// StringConcat creates an expression that concatenates multiple strings into a single string.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a string.
+// - otherStrings are the other strings to concatenate.
+//
+// Example:
+//
+//	// Concatenate first name and last name.
+//	StringConcat(FieldOf("firstName"), " ", FieldOf("lastName"))
+func StringConcat(exprOrFieldPath any, otherStrings ...any) Expr {
+	return newBaseFunction("string_concat", append([]Expr{asFieldExpr(exprOrFieldPath)}, toExprs(otherStrings)...))
+}
+
+// StringReverse creates an expression that reverses a string.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a string.
+//
+// Example:
+//
+//	// Reverse the 'name' field.
+//	StringReverse("name")
+func StringReverse(exprOrFieldPath any) Expr {
+	return newBaseFunction("string_reverse", []Expr{asFieldExpr(exprOrFieldPath)})
+}
+
+// Join creates an expression that joins the elements of a string array into a single string.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a string array.
+// - separator is the string to use as a separator between elements.
+//
+// Example:
+//
+//	// Join the 'tags' array with a comma and space.
+//	Join("tags", ", ")
+func Join(exprOrFieldPath any, separator any) Expr {
+	return newBaseFunction("join", []Expr{asFieldExpr(exprOrFieldPath), asStringExpr(separator)})
+}
+
+// Substring creates an expression that returns a substring of a string.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a string.
+// - index is the starting index of the substring.
+// - offset is the length of the substring.
+//
+// Example:
+//
+//	// Get the first 5 characters of the 'description' field.
+//	Substring("description", 0, 5)
+func Substring(exprOrFieldPath any, index any, offset any) Expr {
+	return newBaseFunction("substring", []Expr{asFieldExpr(exprOrFieldPath), asInt64Expr(index), asInt64Expr(offset)})
+}
+
+// ToLower creates an expression that converts a string to lowercase.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a string.
+//
+// Example:
+//
+//	// Convert the 'username' to lowercase.
+//	ToLower("username")
+func ToLower(exprOrFieldPath any) Expr {
+	return newBaseFunction("to_lower", []Expr{asFieldExpr(exprOrFieldPath)})
+}
+
+// ToUpper creates an expression that converts a string to uppercase.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a string.
+//
+// Example:
+//
+//	// Convert the 'product_code' to uppercase.
+//	ToUpper("product_code")
+func ToUpper(exprOrFieldPath any) Expr {
+	return newBaseFunction("to_upper", []Expr{asFieldExpr(exprOrFieldPath)})
+}
+
+// Trim creates an expression that removes leading and trailing whitespace from a string.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a string.
+//
+// Example:
+//
+//	// Trim the 'email' field.
+//	Trim("email")
+func Trim(exprOrFieldPath any) Expr {
+	return newBaseFunction("trim", []Expr{asFieldExpr(exprOrFieldPath)})
+}
+
+// StringSplit creates an expression that splits a string into an array of strings based on a separator.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expr] that evaluates to a string.
+// - separator is the string to split on.
+//
+// Example:
+//
+//	// Split the 'tags' string by commas.
+//	StringSplit("tags", ",")
+func StringSplit(exprOrFieldPath any, separator any) Expr {
+	return newBaseFunction("string_split", []Expr{asFieldExpr(exprOrFieldPath), asStringExpr(separator)})
+}
+
+// CosineDistance creates an expression that calculates the cosine distance between two vectors.
+//   - vector1 can be a field path string, [FieldPath] or [Expr].
+//   - vector2 can be [Vector32], [Vector64], []float32, []float64 or [Expr].
+//
+// Example:
+//
+//	// Calculate the cosine distance between two vector fields.
+//	CosineDistance("vector_field_1", FieldOf("vector_field_2"))
+func CosineDistance(vector1 any, vector2 any) Expr {
+	return newBaseFunction("cosine_distance", []Expr{asFieldExpr(vector1), asVectorExpr(vector2)})
+}
+
+// DotProduct creates an expression that calculates the dot product of two vectors.
+//   - vector1 can be a field path string, [FieldPath] or [Expr].
+//   - vector2 can be [Vector32], [Vector64], []float32, []float64 or [Expr].
+//
+// Example:
+//
+//	// Calculate the dot product of two vector fields.
+//	DotProduct("vector_field_1", FieldOf("vector_field_2"))
+func DotProduct(vector1 any, vector2 any) Expr {
+	return newBaseFunction("dot_product", []Expr{asFieldExpr(vector1), asVectorExpr(vector2)})
+}
+
+// EuclideanDistance creates an expression that calculates the euclidean distance between two vectors.
+//   - vector1 can be a field path string, [FieldPath] or [Expr].
+//   - vector2 can be [Vector32], [Vector64], []float32, []float64 or [Expr].
+//
+// Example:
+//
+//	// Calculate the euclidean distance between two vector fields.
+//	EuclideanDistance("vector_field_1", FieldOf("vector_field_2"))
+func EuclideanDistance(vector1 any, vector2 any) Expr {
+	return newBaseFunction("euclidean_distance", []Expr{asFieldExpr(vector1), asVectorExpr(vector2)})
+}
+
+// VectorLength creates an expression that calculates the length of a vector.
+//   - exprOrFieldPath can be a field path string, [FieldPath] or [Expr].
+//
+// Example:
+//
+//	// Calculate the length of a vector field.
+//	VectorLength("vector_field")
+func VectorLength(exprOrFieldPath any) Expr {
+	return newBaseFunction("vector_length", []Expr{asFieldExpr(exprOrFieldPath)})
 }

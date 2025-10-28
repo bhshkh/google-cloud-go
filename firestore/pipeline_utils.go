@@ -17,6 +17,7 @@ package firestore
 import (
 	"errors"
 	"fmt"
+	"reflect"
 
 	pb "cloud.google.com/go/firestore/apiv1/firestorepb"
 )
@@ -28,6 +29,34 @@ func toExprOrConstant(val any) Expr {
 		return expr
 	}
 	return ConstantOf(val)
+}
+
+// toExprs converts a plain Go value or an existing Expr into an Expr.
+// Plain values are wrapped in a Constant.
+func toExprs(val []any) []Expr {
+	exprs := make([]Expr, len(val))
+	for i, v := range val {
+		exprs[i] = toExprOrConstant(v)
+	}
+	return exprs
+}
+
+// val should be single Expr or array of Expr/constants
+func toExprOrExprs(val any) []Expr {
+	if expr, ok := val.(Expr); ok {
+		return []Expr{expr}
+	}
+
+	arrayVal := reflect.ValueOf(val)
+	if arrayVal.Kind() != reflect.Slice {
+		return []Expr{&baseExpr{err: fmt.Errorf("firestore: value must be a slice or Expr, but got %T", val)}}
+	}
+
+	exprs := make([]Expr, arrayVal.Len())
+	for i := 0; i < arrayVal.Len(); i++ {
+		exprs[i] = toExprOrConstant(arrayVal.Index(i).Interface())
+	}
+	return exprs
 }
 
 // asFieldExpr converts a plain Go string or FieldPath into a field expression.
@@ -64,6 +93,17 @@ func asStringExpr(val any) Expr {
 		return ConstantOf(v)
 	default:
 		return &baseExpr{err: fmt.Errorf("firestore: value must be a string or Expr, but got %T", val)}
+	}
+}
+
+func asVectorExpr(val any) Expr {
+	switch v := val.(type) {
+	case Expr:
+		return v
+	case Vector32, Vector64, []float32, []float64:
+		return ConstantOf(v)
+	default:
+		return &baseExpr{err: fmt.Errorf("firestore: value must be a []float32, []float64, Vector32, Vector64 or Expr, but got %T", val)}
 	}
 }
 
