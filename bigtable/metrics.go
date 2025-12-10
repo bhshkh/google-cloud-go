@@ -135,7 +135,12 @@ var (
 			},
 			recordedPerAttempt: false,
 		},
-		metricNameAppBlockingLatencies: {},
+		metricNameAppBlockingLatencies: {
+			additionalAttrs: []string{
+				metricLabelKeyStatus,
+			},
+			recordedPerAttempt: false,
+		},
 		metricNameClientBlockingLatencies: {
 			recordedPerAttempt: true,
 		},
