@@ -731,7 +731,7 @@ func TestToOtelMetricAttrs(t *testing.T) {
 		method:      "ReadRows",
 		isStreaming: true,
 		currOp: opTracer{
-			status: codes.OK.String(),
+			status: canonicalString(codes.OK),
 			currAttempt: attemptTracer{
 				startTime: time.Now(),
 				clusterID: "my-cluster",
@@ -755,7 +755,7 @@ func TestToOtelMetricAttrs(t *testing.T) {
 				attribute.String(monitoredResLabelKeyTable, "my-table"),
 				attribute.String(metricLabelKeyMethod, "ReadRows"),
 				attribute.Bool(metricLabelKeyStreamingOperation, true),
-				attribute.String(metricLabelKeyStatus, codes.OK.String()),
+				attribute.String(metricLabelKeyStatus, canonicalString(codes.OK)),
 				attribute.String(monitoredResLabelKeyCluster, clusterID1),
 				attribute.String(monitoredResLabelKeyZone, zoneID1),
 			},
