@@ -1142,7 +1142,7 @@ func TestApplicationLatencies(t *testing.T) {
 				if _, exists := metricLabels[metricLabelKeyStreamingOperation]; exists {
 					t.Errorf("Label %s should not be present for %s", metricLabelKeyStreamingOperation, expectedMetricType)
 				}
-
+				fmt.Printf("metricLabels[metricLabelKeyStatus]: %v\n", metricLabels[metricLabelKeyStatus])
 				resLabels := ts.GetResource().GetLabels()
 				if tblName, ok := resLabels[monitoredResLabelKeyTable]; (ok && tblName != tableID && tblName != "") || !ok {
 					t.Errorf("Label %s: got %q, want %q for resource %s", monitoredResLabelKeyTable, tblName, tableID, ts.GetResource())

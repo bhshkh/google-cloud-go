@@ -22,9 +22,10 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"cloud.google.com/go/bigtable/internal"
 	"github.com/google/uuid"
@@ -738,44 +739,30 @@ func (mt *builtinMetricsTracer) setCurrOpStatus(code codes.Code) {
 }
 
 func canonicalString(c codes.Code) string {
-	switch c {
-	case codes.OK:
-		return "OK"
-	case codes.Canceled:
-		return "CANCELLED"
-	case codes.Unknown:
-		return "UNKNOWN"
-	case codes.InvalidArgument:
-		return "INVALID_ARGUMENT"
-	case codes.DeadlineExceeded:
-		return "DEADLINE_EXCEEDED"
-	case codes.NotFound:
-		return "NOT_FOUND"
-	case codes.AlreadyExists:
-		return "ALREADY_EXISTS"
-	case codes.PermissionDenied:
-		return "PERMISSION_DENIED"
-	case codes.ResourceExhausted:
-		return "RESOURCE_EXHAUSTED"
-	case codes.FailedPrecondition:
-		return "FAILED_PRECONDITION"
-	case codes.Aborted:
-		return "ABORTED"
-	case codes.OutOfRange:
-		return "OUT_OF_RANGE"
-	case codes.Unimplemented:
-		return "UNIMPLEMENTED"
-	case codes.Internal:
-		return "INTERNAL"
-	case codes.Unavailable:
-		return "UNAVAILABLE"
-	case codes.DataLoss:
-		return "DATA_LOSS"
-	case codes.Unauthenticated:
-		return "UNAUTHENTICATED"
-	default:
-		return "CODE(" + strconv.FormatInt(int64(c), 10) + ")"
+	s := c.String()
+	var result strings.Builder
+
+	// Check if the string has any lowercase letters.
+	hasLowercase := false
+	for _, r := range s {
+		if unicode.IsLower(r) {
+			hasLowercase = true
+			break
+		}
 	}
+
+	for i, r := range s {
+		// Only add underscore if it's not the first character, is an uppercase letter,
+		// and the string has lowercase letters (to distinguish from all-caps strings like "OK").
+		if i > 0 && unicode.IsUpper(r) && hasLowercase {
+			result.WriteRune('_')
+		} else if unicode.IsSpace(r) {
+			result.WriteRune('_')
+			continue
+		}
+		result.WriteRune(unicode.ToUpper(r))
+	}
+	return result.String()
 }
 
 func (mt *builtinMetricsTracer) incrementAppBlockingLatency(latency float64) {
