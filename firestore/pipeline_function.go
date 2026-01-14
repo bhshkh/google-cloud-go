@@ -20,9 +20,9 @@ import (
 	pb "cloud.google.com/go/firestore/apiv1/firestorepb"
 )
 
-// Function represents Firestore [Pipeline] functions, which can be evaluated within pipeline
+// FunctionExpression represents Firestore [Pipeline] functions, which can be evaluated within pipeline
 // execution.
-type Function interface {
+type FunctionExpression interface {
 	Expression
 	isFunction()
 }
@@ -33,8 +33,10 @@ type baseFunction struct {
 
 func (b *baseFunction) isFunction() {}
 
-// Ensure that *baseFunction implements the Function interface.
-var _ Function = (*baseFunction)(nil)
+// Ensure that *baseFunction implements the FunctionExpression interface.
+var _ FunctionExpression = (*baseFunction)(nil)
+
+
 
 func newBaseFunction(name string, params []Expression) *baseFunction {
 	argsPbVals := make([]*pb.Value, 0, len(params))
@@ -159,6 +161,27 @@ func Round(numericExprOrFieldPath any) Expression {
 // - numericExprOrFieldPath can be a field path string, [FieldPath] or an [Expression] that returns a number when evaluated.
 func Sqrt(numericExprOrFieldPath any) Expression {
 	return newBaseFunction("sqrt", []Expression{asFieldExpr(numericExprOrFieldPath)})
+}
+
+// BitwiseAnd creates an expression that performs a bitwise AND operation.
+// - left can be a field path string, [FieldPath] or [Expression].
+// - right can be an integer constant or an [Expression].
+func BitwiseAnd(left, right any) Expression {
+	return leftRightToBaseFunction("bitwise_and", left, right)
+}
+
+// BitwiseOr creates an expression that performs a bitwise OR operation.
+// - left can be a field path string, [FieldPath] or [Expression].
+// - right can be an integer constant or an [Expression].
+func BitwiseOr(left, right any) Expression {
+	return leftRightToBaseFunction("bitwise_or", left, right)
+}
+
+// BitwiseXor creates an expression that performs a bitwise XOR operation.
+// - left can be a field path string, [FieldPath] or [Expression].
+// - right can be an integer constant or an [Expression].
+func BitwiseXor(left, right any) Expression {
+	return leftRightToBaseFunction("bitwise_xor", left, right)
 }
 
 // TimestampAdd creates an expression that adds a specified amount of time to a timestamp.

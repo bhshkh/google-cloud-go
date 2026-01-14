@@ -31,6 +31,9 @@ type BooleanExpression interface {
 	IfErrorBoolean(catchExpr BooleanExpression) BooleanExpression
 	// Not creates an expression that negates a boolean expression.
 	Not() BooleanExpression
+	// CountIf creates an aggregate function that counts the number of values of the
+	// provided field or expression evaluates to TRUE.
+	CountIf() AggregateFunction
 }
 
 // baseBooleanExpression provides common methods for all BooleanExpr implementations.
@@ -47,6 +50,9 @@ func (b *baseBooleanExpression) IfErrorBoolean(catchExpr BooleanExpression) Bool
 }
 func (b *baseBooleanExpression) Not() BooleanExpression {
 	return Not(b)
+}
+func (b *baseBooleanExpression) CountIf() AggregateFunction {
+	return CountIf(b)
 }
 
 // Ensure that baseBooleanExpr implements the BooleanExpr interface.
@@ -230,6 +236,24 @@ func LessThan(left, right any) BooleanExpression {
 //		LessThanOrEqual("age", FieldOf("limit"))
 func LessThanOrEqual(left, right any) BooleanExpression {
 	return &baseBooleanExpression{baseFunction: leftRightToBaseFunction("less_than_or_equal", left, right)}
+}
+
+// IsNull creates a boolean expression that checks if the expression is NULL.
+// - exprOrFieldPath can be a field path string, [FieldPath] or [Expression].
+func IsNull(exprOrFieldPath any) BooleanExpression {
+	return &baseBooleanExpression{baseFunction: newBaseFunction("is_null", []Expression{asFieldExpr(exprOrFieldPath)})}
+}
+
+// IsNotNull creates a boolean expression that checks if the expression is not NULL.
+// - exprOrFieldPath can be a field path string, [FieldPath] or [Expression].
+func IsNotNull(exprOrFieldPath any) BooleanExpression {
+	return &baseBooleanExpression{baseFunction: newBaseFunction("is_not_null", []Expression{asFieldExpr(exprOrFieldPath)})}
+}
+
+// IsNan creates a boolean expression that checks if the expression is NaN.
+// - exprOrFieldPath can be a field path string, [FieldPath] or [Expression].
+func IsNan(exprOrFieldPath any) BooleanExpression {
+	return &baseBooleanExpression{baseFunction: newBaseFunction("is_nan", []Expression{asFieldExpr(exprOrFieldPath)})}
 }
 
 // EndsWith creates an expression that checks if a string field or expression ends with a given suffix.

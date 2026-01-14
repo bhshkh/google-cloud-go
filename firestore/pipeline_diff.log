@@ -1,0 +1,54 @@
+Differences in Arguments & Function Names
+
+  Several functions differ in their flexibility or naming conventions:
+
+  1. Select & Distinct
+   - Java: Has overloaded methods for String and Selectable.
+     - select(Selectable selection, Selectable... additionalSelections)
+     - select(String field, String... additionalFields)
+   - Go: Uses variadic any to handle string, FieldPath, or Selectable in a single method.
+     - Select(fieldpathsOrSelectables ...any)
+     - Distinct(fieldpathsOrSelectables ...any)
+
+  2. AddFields & RemoveFields
+   - Java:
+     - addFields(Selectable field, Selectable... additionalFields)
+     - removeFields(String field, String... additionalFields) and removeFields(Field field, Field... additionalFields)
+   - Go:
+     - AddFields(selectables ...Selectable)
+     - RemoveFields(fieldpaths ...any) (Uses any to support multiple types).
+
+  3. Aggregate
+   - Java: Overloads aggregate for accumulators and an Aggregate stage object.
+     - aggregate(AliasedAggregate... accumulators)
+     - aggregate(Aggregate aggregate)
+   - Go: Splits these into two distinct functions.
+     - Aggregate(accumulators ...*AliasedAggregate)
+     - AggregateWithSpec(spec *AggregateSpec)
+
+  4. Replace
+   - Java: Named replaceWith.
+     - replaceWith(String fieldName)
+     - replaceWith(Expression expr)
+   - Go: Named Replace, uses any.
+     - Replace(fieldpathOrSelectable any)
+
+  5. Unnest
+   - Java: Has multiple overloads for String and Selectable.
+     - unnest(String fieldName, String alias)
+     - unnest(String fieldName, String alias, UnnestOptions options)
+     - unnest(Selectable expr)
+   - Go: Simplified into two variants.
+     - Unnest(fieldpathsOrSelectable any)
+     - UnnestWithAlias(fieldpath any, alias string, opts *UnnestOptions)
+
+  6. Execution
+   - Java: execute() returns an ApiFuture<Snapshot>. There is also a streaming variant execute(ApiStreamObserver observer).
+   - Go: Execute(ctx context.Context) returns a *PipelineSnapshot which contains an iterator.
+
+  ---
+
+  Key Structural Observations
+   - Go leverages any and type switches internally to provide a more polymorphic API in fewer methods.
+   - Java relies on method overloading to provide type-safe signatures for String vs. Expression/Selectable.
+   - Go functions often return p if an internal error (p.err) has already occurred, whereas Java typically constructs the stage immediately.

@@ -91,6 +91,20 @@ type Expression interface {
 	// Sqrt creates an expression that is the square root of the input field or expression.
 	Sqrt() Expression
 
+	// Bitwise operations
+	// BitwiseAnd creates an expression that performs a bitwise AND operation.
+	//
+	// The parameter 'other' can be an integer constant or an [Expression] that evaluates to an integer.
+	BitwiseAnd(other any) Expression
+	// BitwiseOr creates an expression that performs a bitwise OR operation.
+	//
+	// The parameter 'other' can be an integer constant or an [Expression] that evaluates to an integer.
+	BitwiseOr(other any) Expression
+	// BitwiseXor creates an expression that performs a bitwise XOR operation.
+	//
+	// The parameter 'other' can be an integer constant or an [Expression] that evaluates to an integer.
+	BitwiseXor(other any) Expression
+
 	// Array operations
 	// ArrayContains creates a boolean expression that checks if an array contains a specific value.
 	//
@@ -200,6 +214,12 @@ type Expression interface {
 	//
 	// The parameter 'other' can be a constant (e.g., string, int, bool) or an [Expression].
 	LessThanOrEqual(other any) BooleanExpression
+	// IsNull creates a boolean expression that checks if the expression is NULL.
+	IsNull() BooleanExpression
+	// IsNotNull creates a boolean expression that checks if the expression is not NULL.
+	IsNotNull() BooleanExpression
+	// IsNan creates a boolean expression that checks if the expression is NaN.
+	IsNan() BooleanExpression
 
 	// General functions
 	// Length creates an expression that calculates the length of string, array, map or vector.
@@ -370,6 +390,11 @@ func (b *baseExpression) Pow(other any) Expression      { return Pow(b, other) }
 func (b *baseExpression) Round() Expression             { return Round(b) }
 func (b *baseExpression) Sqrt() Expression              { return Sqrt(b) }
 
+// Bitwise functions
+func (b *baseExpression) BitwiseAnd(other any) Expression { return BitwiseAnd(b, other) }
+func (b *baseExpression) BitwiseOr(other any) Expression  { return BitwiseOr(b, other) }
+func (b *baseExpression) BitwiseXor(other any) Expression { return BitwiseXor(b, other) }
+
 // Array functions
 func (b *baseExpression) ArrayContains(value any) BooleanExpression { return ArrayContains(b, value) }
 func (b *baseExpression) ArrayContainsAll(values any) BooleanExpression {
@@ -421,6 +446,9 @@ func (b *baseExpression) LessThan(other any) BooleanExpression { return LessThan
 func (b *baseExpression) LessThanOrEqual(other any) BooleanExpression {
 	return LessThanOrEqual(b, other)
 }
+func (b *baseExpression) IsNull() BooleanExpression    { return IsNull(b) }
+func (b *baseExpression) IsNotNull() BooleanExpression { return IsNotNull(b) }
+func (b *baseExpression) IsNan() BooleanExpression     { return IsNan(b) }
 
 // General functions
 func (b *baseExpression) Length() Expression              { return Length(b) }
@@ -451,7 +479,6 @@ func (b *baseExpression) Sum() AggregateFunction           { return Sum(b) }
 func (b *baseExpression) Average() AggregateFunction       { return Average(b) }
 func (b *baseExpression) Count() AggregateFunction         { return Count(b) }
 func (b *baseExpression) CountDistinct() AggregateFunction { return CountDistinct(b) }
-func (b *baseExpression) CountIf() AggregateFunction       { return CountIf(b) }
 func (b *baseExpression) Maximum() AggregateFunction       { return Maximum(b) }
 func (b *baseExpression) Minimum() AggregateFunction       { return Minimum(b) }
 

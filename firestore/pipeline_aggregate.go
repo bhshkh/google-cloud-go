@@ -160,13 +160,12 @@ func CountDistinct(fieldOrExpr any) AggregateFunction {
 
 // CountIf creates an aggregation that counts the number of values of the
 // provided field or expression evaluates to TRUE.
-// fieldOrExpr can be a field path string, [FieldPath] or [Expression]
+// condition must be a [BooleanExpression].
 // Example:
 //
-//	CountIf(FieldOf("published")).As("publishedCount")
-//	CountIf("published").As("publishedCount")
-func CountIf(fieldOrExpr any) AggregateFunction {
-	return newBaseAggregateFunction("count_if", fieldOrExpr)
+//	CountIf(FieldOf("published").Equal(true)).As("publishedCount")
+func CountIf(condition BooleanExpression) AggregateFunction {
+	return newBaseAggregateFunction("count_if", condition)
 }
 
 // Maximum creates an aggregation that calculates the maximum of values from an expression or a field's values
@@ -191,4 +190,25 @@ func Maximum(fieldOrExpr any) AggregateFunction {
 //	 	Minimum("orderAmount").As("minOrderAmount")          // String implicitly becomes FieldOf(...).As(...)
 func Minimum(fieldOrExpr any) AggregateFunction {
 	return newBaseAggregateFunction("minimum", fieldOrExpr)
+}
+
+// RawAggregate creates a raw aggregation with the given name and arguments.
+// This allows using aggregation functions that are supported by the backend but not yet exposed in the SDK.
+func RawAggregate(name string, args ...Expression) AggregateFunction {
+	argsPbVals := make([]*pb.Value, 0, len(args))
+	for i, arg := range args {
+		pbVal, err := arg.toProto()
+		if err != nil {
+			return &baseAggregateFunction{err: fmt.Errorf("firestore: error converting arg %d for aggregate %q: %w", i, name, err)}
+		}
+		argsPbVals = append(argsPbVals, pbVal)
+	}
+
+	pbVal := &pb.Value{ValueType: &pb.Value_FunctionValue{
+		FunctionValue: &pb.Function{
+			Name: name,
+			Args: argsPbVals,
+		},
+	}}
+	return &baseAggregateFunction{pbVal: pbVal}
 }
