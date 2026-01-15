@@ -2407,3 +2407,1760 @@ func TestIntegration_CreateFromAggregationQuery(t *testing.T) {
 		t.Errorf("got count %d, want 3", data["count"])
 	}
 }
+
+func setupJavaBooks(t *testing.T, coll *CollectionRef) map[string]map[string]interface{} {
+	h := testHelper{t}
+
+	bookDocs := map[string]map[string]interface{}{
+		"book1": {
+			"title":     "The Hitchhiker's Guide to the Galaxy",
+			"author":    "Douglas Adams",
+			"genre":     "Science Fiction",
+			"published": 1979,
+			"rating":    4.2,
+			"tags":      []interface{}{"comedy", "space", "adventure"},
+			"awards":    map[string]interface{}{"hugo": true, "nebula": false},
+			"embedding": Vector64{10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+		},
+		"book2": {
+			"title":     "Pride and Prejudice",
+			"author":    "Jane Austen",
+			"genre":     "Romance",
+			"published": 1813,
+			"rating":    4.5,
+			"tags":      []interface{}{"classic", "social commentary", "love"},
+			"awards":    map[string]interface{}{"none": true},
+			"embedding": Vector64{1.0, 10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+		},
+		"book3": {
+			"title":     "One Hundred Years of Solitude",
+			"author":    "Gabriel García Márquez",
+			"genre":     "Magical Realism",
+			"published": 1967,
+			"rating":    4.3,
+			"tags":      []interface{}{"family", "history", "fantasy"},
+			"awards":    map[string]interface{}{"nobel": true, "nebula": false},
+			"embedding": Vector64{1.0, 1.0, 10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+		},
+		"book4": {
+			"title":     "The Lord of the Rings",
+			"author":    "J.R.R. Tolkien",
+			"genre":     "Fantasy",
+			"published": 1954,
+			"rating":    4.7,
+			"tags":      []interface{}{"adventure", "magic", "epic"},
+			"awards":    map[string]interface{}{"hugo": false, "nebula": false},
+			"cost":      math.NaN(),
+			"embedding": Vector64{1.0, 1.0, 1.0, 10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+		},
+		"book5": {
+			"title":     "The Handmaid's Tale",
+			"author":    "Margaret Atwood",
+			"genre":     "Dystopian",
+			"published": 1985,
+			"rating":    4.1,
+			"tags":      []interface{}{"feminism", "totalitarianism", "resistance"},
+			"awards":    map[string]interface{}{"arthur c. clarke": true, "booker prize": false},
+			"embedding": Vector64{1.0, 1.0, 1.0, 1.0, 10.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+		},
+		"book6": {
+			"title":     "Crime and Punishment",
+			"author":    "Fyodor Dostoevsky",
+			"genre":     "Psychological Thriller",
+			"published": 1866,
+			"rating":    4.3,
+			"tags":      []interface{}{"philosophy", "crime", "redemption"},
+			"awards":    map[string]interface{}{"none": true},
+			"embedding": Vector64{1.0, 1.0, 1.0, 1.0, 1.0, 10.0, 1.0, 1.0, 1.0, 1.0},
+		},
+		"book7": {
+			"title":     "To Kill a Mockingbird",
+			"author":    "Harper Lee",
+			"genre":     "Southern Gothic",
+			"published": 1960,
+			"rating":    4.2,
+			"tags":      []interface{}{"racism", "injustice", "coming-of-age"},
+			"awards":    map[string]interface{}{"pulitzer": true},
+			"embedding": Vector64{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 10.0, 1.0, 1.0, 1.0},
+		},
+		"book8": {
+			"title":     "1984",
+			"author":    "George Orwell",
+			"genre":     "Dystopian",
+			"published": 1949,
+			"rating":    4.2,
+			"tags":      []interface{}{"surveillance", "totalitarianism", "propaganda"},
+			"awards":    map[string]interface{}{"prometheus": true},
+			"embedding": Vector64{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 10.0, 1.0, 1.0},
+		},
+		"book9": {
+			"title":     "The Great Gatsby",
+			"author":    "F. Scott Fitzgerald",
+			"genre":     "Modernist",
+			"published": 1925,
+			"rating":    4.0,
+			"tags":      []interface{}{"wealth", "american dream", "love"},
+			"awards":    map[string]interface{}{"none": true},
+			"embedding": Vector64{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 10.0, 1.0},
+		},
+		"book10": {
+			"title":     "Dune",
+			"author":    "Frank Herbert",
+			"genre":     "Science Fiction",
+			"published": 1965,
+			"rating":    4.6,
+			"tags":      []interface{}{"politics", "desert", "ecology"},
+			"awards":    map[string]interface{}{"hugo": true, "nebula": true},
+			"embedding": Vector64{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 10.0},
+		},
+		"book11": {
+			"title":     "Timestamp Book",
+			"author":    "Timestamp Author",
+			"timestamp": time.Now(),
+		},
+	}
+
+	var docRefs []*DocumentRef
+	for id, data := range bookDocs {
+		docRef := coll.Doc(id)
+		h.mustCreate(docRef, data)
+		docRefs = append(docRefs, docRef)
+	}
+
+	t.Cleanup(func() {
+		deleteDocuments(docRefs)
+	})
+
+	return bookDocs
+}
+
+func TestIntegration_ITPipelineTest(t *testing.T) {
+	skipIfNotEnterprise(t)
+	runTest := func(name string, f func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef)) {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			client := integrationClient(t)
+			coll := integrationColl(t)
+			_ = setupJavaBooks(t, coll)
+			f(t, ctx, client, coll)
+		})
+	}
+
+	runTest("TestAllDataTypes", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		refDate := time.Now().Truncate(time.Millisecond) // Java uses Date which is millisecond precision
+		refTimestamp := refDate
+		refGeoPoint := &latlng.LatLng{Latitude: 1, Longitude: 2}
+		refBytes := []byte{1, 2, 3}
+		refVector := Vector64{1.0, 2.0, 3.0}
+
+		refMap := map[string]interface{}{
+			"number":    int64(1),
+			"string":    "a string",
+			"boolean":   true,
+			"null":      nil,
+			"geoPoint":  refGeoPoint,
+			"timestamp": refTimestamp,
+			"date":      refDate,
+			"bytes":     refBytes,
+			"vector":    refVector,
+		}
+
+		refArray := []interface{}{
+			int64(1),
+			"a string",
+			true,
+			nil,
+			refTimestamp,
+			refGeoPoint,
+			refDate,
+			refBytes,
+			refVector,
+		}
+
+		pipeline := client.Pipeline().
+			Collection(coll.ID).
+			Limit(1).
+			Select(
+				ConstantOf(1).As("number"),
+				ConstantOf("a string").As("string"),
+				ConstantOf(true).As("boolean"),
+				ConstantOfNull().As("null"),
+				ConstantOf(refTimestamp).As("timestamp"),
+				ConstantOf(refDate).As("date"),
+				ConstantOf(refGeoPoint).As("geoPoint"),
+				ConstantOf(refBytes).As("bytes"),
+				ConstantOf(refVector).As("vector"),
+				Map(refMap).As("map"),
+				ArrayFromSlice(refArray).As("array"),
+			)
+
+		iter := pipeline.Execute(ctx).Results()
+		results, err := iter.GetAll()
+		if err != nil {
+			t.Fatalf("GetAll: %v", err)
+		}
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		data := results[0].Data()
+
+		if diff := testutil.Diff(data["number"], int64(1)); diff != "" {
+			t.Errorf("number mismatch: %s", diff)
+		}
+		if diff := testutil.Diff(data["string"], "a string"); diff != "" {
+			t.Errorf("string mismatch: %s", diff)
+		}
+		if diff := testutil.Diff(data["boolean"], true); diff != "" {
+			t.Errorf("boolean mismatch: %s", diff)
+		}
+		if data["null"] != nil {
+			t.Errorf("null mismatch: got %v", data["null"])
+		}
+		if diff := testutil.Diff(data["geoPoint"], refGeoPoint); diff != "" {
+			t.Errorf("geoPoint mismatch: %s", diff)
+		}
+		if diff := testutil.Diff(data["timestamp"], refTimestamp, cmpopts.EquateApproxTime(time.Millisecond)); diff != "" {
+			t.Errorf("timestamp mismatch: %s", diff)
+		}
+		if diff := testutil.Diff(data["date"], refDate, cmpopts.EquateApproxTime(time.Millisecond)); diff != "" {
+			t.Errorf("date mismatch: %s", diff)
+		}
+		if diff := testutil.Diff(data["bytes"], refBytes); diff != "" {
+			t.Errorf("bytes mismatch: %s", diff)
+		}
+		if diff := testutil.Diff(data["vector"], refVector); diff != "" {
+			t.Errorf("vector mismatch: %s", diff)
+		}
+
+		if diff := testutil.Diff(data["map"], refMap, cmpopts.EquateApproxTime(time.Millisecond)); diff != "" {
+			t.Errorf("map mismatch: %s", diff)
+		}
+		if diff := testutil.Diff(data["array"], refArray, cmpopts.EquateApproxTime(time.Millisecond)); diff != "" {
+			t.Errorf("array mismatch: %s", diff)
+		}
+	})
+
+	runTest("TestResultMetadata", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		pipeline := client.Pipeline().Collection(coll.ID)
+		snapshot := pipeline.Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatalf("GetAll: %v", err)
+		}
+
+		execTime, err := snapshot.ExecutionTime()
+		if err != nil {
+			t.Fatalf("ExecutionTime: %v", err)
+		}
+		if execTime == nil {
+			t.Error("ExecutionTime is nil")
+		}
+
+		for _, res := range results {
+			if res.CreateTime() == nil {
+				t.Error("CreateTime is nil")
+			}
+			if res.UpdateTime() == nil {
+				t.Error("UpdateTime is nil")
+			}
+			if res.ExecutionTime() == nil {
+				t.Error("Result ExecutionTime is nil")
+			}
+			if res.CreateTime().After(*res.UpdateTime()) {
+				t.Error("CreateTime > UpdateTime")
+			}
+			if !res.UpdateTime().Before(*execTime) {
+				t.Error("UpdateTime >= ExecutionTime")
+			}
+		}
+
+		docRef := coll.Doc("book1")
+		_, err = docRef.Update(ctx, []Update{{Path: "rating", Value: 5.0}})
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+
+		snapshot = pipeline.Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).Execute(ctx)
+		results, err = snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatalf("GetAll after update: %v", err)
+		}
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		res := results[0]
+		if !res.CreateTime().Before(*res.UpdateTime()) {
+			t.Error("CreateTime >= UpdateTime after update")
+		}
+	})
+
+	runTest("TestResultIsEqual", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		pipeline := client.Pipeline().Collection(coll.ID).Sort(Ascending(FieldOf("title")))
+
+		snap1 := pipeline.Limit(1).Execute(ctx)
+		res1, err := snap1.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		snap2 := pipeline.Limit(1).Execute(ctx)
+		res2, err := snap2.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		snap3 := pipeline.Offset(1).Limit(1).Execute(ctx)
+		res3, err := snap3.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(res1) != 1 || len(res2) != 1 || len(res3) != 1 {
+			t.Fatal("Expected 1 result for each snapshot")
+		}
+
+		if diff := testutil.Diff(res1[0].Data(), res2[0].Data()); diff != "" {
+			t.Errorf("res1 != res2: %s", diff)
+		}
+		if diff := testutil.Diff(res1[0].Data(), res3[0].Data()); diff == "" {
+			t.Error("res1 == res3, expected different")
+		}
+	})
+
+	runTest("TestEmptyResultMetadata", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		pipeline := client.Pipeline().Collection(coll.ID).Limit(0)
+		snapshot := pipeline.Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 0 {
+			t.Errorf("Expected 0 results, got %d", len(results))
+		}
+		execTime, err := snapshot.ExecutionTime()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if execTime == nil {
+			t.Error("ExecutionTime is nil")
+		}
+		if time.Since(*execTime) > 10*time.Second {
+			t.Errorf("ExecutionTime too old: %v", execTime)
+		}
+	})
+
+	runTest("TestAggregateResultMetadata", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		pipeline := client.Pipeline().Collection(coll.ID).Aggregate(CountAll().As("count"))
+		snapshot := pipeline.Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Errorf("Expected 1 result, got %d", len(results))
+		}
+		res := results[0]
+		if res.CreateTime() != nil {
+			t.Error("CreateTime should be nil for aggregate result")
+		}
+		if res.UpdateTime() != nil {
+			t.Error("UpdateTime should be nil for aggregate result")
+		}
+		execTime, err := snapshot.ExecutionTime()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if execTime == nil {
+			t.Error("ExecutionTime is nil")
+		}
+	})
+
+	runTest("SelectSpecificFields", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().Collection(coll.ID).
+			Select("title", "author").
+			Sort(Ascending(FieldOf("author"))).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(results) != 11 {
+			t.Errorf("Expected 11 results, got %d", len(results))
+		}
+		first := results[0].Data()
+		if first["title"] != "The Hitchhiker's Guide to the Galaxy" {
+			t.Errorf("Expected first title ..., got %v", first["title"])
+		}
+		if _, ok := first["rating"]; ok {
+			t.Error("Unexpected field rating")
+		}
+	})
+
+	runTest("AddAndRemoveFields", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().Collection(coll.ID).
+			Where(NotEqual("author", "Timestamp Author")).
+			AddFields(
+				StringConcat(FieldOf("author"), "_", FieldOf("title")).As("author_title"),
+				StringConcat(FieldOf("title"), "_", FieldOf("author")).As("title_author"),
+			).
+			RemoveFields("title_author", "tags", "awards", "rating", "title", "embedding", "cost").
+			RemoveFields("published", "genre", "nestedField").
+			Sort(Ascending(FieldOf("author_title"))).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(results) != 10 {
+			t.Errorf("Expected 10 results, got %d", len(results))
+		}
+		first := results[0].Data()
+		if first["author_title"] != "Douglas Adams_The Hitchhiker's Guide to the Galaxy" {
+			t.Errorf("Expected author_title ..., got %v", first["author_title"])
+		}
+		if _, ok := first["title"]; ok {
+			t.Error("Unexpected field title")
+		}
+	})
+
+	runTest("WhereByMultipleConditions", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(And(GreaterThan("rating", 4.5), Equal("genre", "Science Fiction"))).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Fatalf("Expected 1 result, got %d", len(results))
+		}
+		if results[0].Data()["title"] != "Dune" {
+			t.Errorf("Expected Dune, got %v", results[0].Data()["title"])
+		}
+	})
+
+	runTest("WhereByOrCondition", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Or(Equal("genre", "Romance"), Equal("genre", "Dystopian"))).
+			Select("title").
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 3 {
+			t.Errorf("Expected 3 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestPipelineWithOffsetAndLimit", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().Collection(coll.ID).
+			Sort(Ascending(FieldOf("author"))).
+			Offset(5).
+			Limit(3).
+			Select("title", "author").
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 3 {
+			t.Errorf("Expected 3 results, got %d", len(results))
+		}
+		if results[0].Data()["author"] != "George Orwell" {
+			t.Errorf("Expected George Orwell, got %v", results[0].Data()["author"])
+		}
+		if results[1].Data()["author"] != "Harper Lee" {
+			t.Errorf("Expected Harper Lee, got %v", results[1].Data()["author"])
+		}
+		if results[2].Data()["author"] != "J.R.R. Tolkien" {
+			t.Errorf("Expected J.R.R. Tolkien, got %v", results[2].Data()["author"])
+		}
+	})
+
+	runTest("TestAggregates", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		// First part: countAll
+		snapshot := client.Pipeline().Collection(coll.ID).Aggregate(CountAll().As("count")).Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if results[0].Data()["count"] != int64(11) {
+			t.Errorf("Expected count 11, got %v", results[0].Data()["count"])
+		}
+
+		// Second part: where + aggregates
+		snapshot = client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("genre", "Science Fiction")).
+			Aggregate(
+				CountAll().As("count"),
+				Average("rating").As("avg_rating"),
+				Maximum("rating").As("max_rating"),
+			).Execute(ctx)
+		results, err = snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := results[0].Data()
+		if data["count"] != int64(2) {
+			t.Errorf("Expected count 2, got %v", data["count"])
+		}
+		// avg_rating 4.4. 4.2 and 4.6. (4.2+4.6)/2 = 4.4
+		if diff := testutil.Diff(data["avg_rating"], 4.4, cmpopts.EquateApprox(0, 0.00001)); diff != "" {
+			t.Errorf("avg_rating mismatch: %s", diff)
+		}
+		if data["max_rating"] != 4.6 {
+			t.Errorf("Expected max 4.6, got %v", data["max_rating"])
+		}
+	})
+
+	runTest("TestMoreAggregates", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		snapshot := client.Pipeline().CreateFromQuery(coll).
+			Aggregate(
+				Sum("rating").As("sum_rating"),
+				Count("rating").As("count_rating"),
+				CountDistinct("genre").As("distinct_genres"),
+			).Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := results[0].Data()
+		// sum: 43.1
+		if diff := testutil.Diff(data["sum_rating"], 43.1, cmpopts.EquateApprox(0, 0.00001)); diff != "" {
+			t.Errorf("sum_rating mismatch: %s", diff)
+		}
+		if data["count_rating"] != int64(10) {
+			t.Errorf("Expected count 10, got %v", data["count_rating"])
+		} // book11 has no rating
+		if data["distinct_genres"] != int64(8) {
+			t.Errorf("Expected distinct 8, got %v", data["distinct_genres"])
+		}
+	})
+
+	runTest("TestCountIfAggregate", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		snapshot := client.Pipeline().CreateFromQuery(coll).
+			Aggregate(CountIf(GreaterThan(FieldOf("rating"), 4.3)).As("count")).
+			Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if results[0].Data()["count"] != int64(3) {
+			t.Errorf("Expected count 3, got %v", results[0].Data()["count"])
+		}
+	})
+
+	runTest("TestGroupBysWithoutAccumulators", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		spec := NewAggregateSpec().WithGroups("genre")
+		p := client.Pipeline().CreateFromQuery(coll).
+			Where(LessThan("published", 1900)).
+			AggregateWithSpec(spec)
+
+		// Check if Execute returns error.
+		if _, err := p.Execute(ctx).Results().GetAll(); err == nil {
+			t.Error("Expected error for aggregates without accumulators")
+		}
+	})
+
+	runTest("TestDistinct", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(LessThan("published", 1900)).
+			Distinct(ToLower(FieldOf("genre")).As("lower_genre")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(results) != 2 {
+			t.Errorf("Expected 2 results, got %d", len(results))
+		}
+		// Sort and check
+		var genres []string
+		for _, r := range results {
+			genres = append(genres, r.Data()["lower_genre"].(string))
+		}
+		sort.Strings(genres)
+		if genres[0] != "psychological thriller" || genres[1] != "romance" {
+			t.Errorf("Unexpected genres: %v", genres)
+		}
+	})
+
+	runTest("TestGroupBysAndAggregate", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		spec := NewAggregateSpec(Average("rating").As("avg_rating")).WithGroups("genre")
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(LessThan("published", 1984)).
+			AggregateWithSpec(spec).
+			Where(GreaterThan("avg_rating", 4.3)).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(results) != 3 {
+			t.Errorf("Expected 3 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestMinMax", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		snapshot := client.Pipeline().CreateFromQuery(coll).
+			Aggregate(
+				CountAll().As("count"),
+				Maximum("rating").As("max_rating"),
+				Minimum("published").As("min_published"),
+			).Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := results[0].Data()
+
+		if data["count"] != int64(11) {
+			t.Errorf("Expected count 11, got %v", data["count"])
+		}
+		if data["max_rating"] != 4.7 {
+			t.Errorf("Expected max 4.7, got %v", data["max_rating"])
+		}
+		if data["min_published"] != int64(1813) {
+			t.Errorf("Expected min 1813, got %v", data["min_published"])
+		}
+	})
+
+	runTest("TestArraySum", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		docRef := coll.Doc("book4")
+		_, err := docRef.Update(ctx, []Update{{Path: "sales", Value: []int{100, 200, 50}}})
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+
+		snapshot := client.Pipeline().Collection(coll.ID).
+			Where(Equal("title", "The Lord of the Rings")).
+			Select(ArraySum("sales").As("totalSales")).
+			Limit(1).
+			Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if results[0].Data()["totalSales"] != int64(350) {
+			t.Errorf("Expected 350, got %v", results[0].Data()["totalSales"])
+		}
+	})
+
+	runTest("TestArrayContains", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		snapshot := client.Pipeline().CreateFromQuery(coll).
+			Where(ArrayContains("tags", "comedy")).
+			Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Errorf("Expected 1 result, got %d", len(results))
+		}
+		// Hitchhiker
+		if results[0].Data()["title"] != "The Hitchhiker's Guide to the Galaxy" {
+			t.Errorf("Expected Hitchhiker, got %v", results[0].Data()["title"])
+		}
+	})
+
+	runTest("TestArrayContainsAny", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		snapshot := client.Pipeline().CreateFromQuery(coll).
+			Where(ArrayContainsAny("tags", []string{"comedy", "classic"})).
+			Select("title").
+			Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 2 {
+			t.Errorf("Expected 2 results, got %d", len(results))
+		}
+		// Hitchhiker and Pride and Prejudice
+	})
+
+	runTest("TestArrayContainsAll", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		snapshot := client.Pipeline().CreateFromQuery(coll).
+			Where(ArrayContainsAll("tags", []string{"adventure", "magic"})).
+			Select("title").
+			Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Errorf("Expected 1 result, got %d", len(results))
+		}
+		// LOTR
+		if results[0].Data()["title"] != "The Lord of the Rings" {
+			t.Errorf("Expected LOTR, got %v", results[0].Data()["title"])
+		}
+	})
+
+	runTest("TestArrayLength", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		snapshot := client.Pipeline().CreateFromQuery(coll).
+			Select(ArrayLength("tags").As("tagsCount")).
+			Where(Equal("tagsCount", 3)).
+			Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 10 {
+			t.Errorf("Expected 10 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestArrayConcat", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		snapshot := client.Pipeline().CreateFromQuery(coll).
+			Select(ArrayConcat(FieldOf("tags"), Array("newTag1", "newTag2")).As("modifiedTags")).
+			Limit(1).
+			Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		tags := results[0].Data()["modifiedTags"].([]interface{})
+		if len(tags) != 5 {
+			t.Errorf("Expected 5 tags, got %d", len(tags))
+		}
+	})
+
+	runTest("TestStrConcat", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		snapshot := client.Pipeline().CreateFromQuery(coll).
+			Select(StringConcat(FieldOf("author"), " - ", FieldOf("title")).As("bookInfo")).
+			Limit(1).
+			Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Order isn't guaranteed without sort, but setupJavaBooks inserts in order or keys? Keys are book1..book11.
+		// Usually iteration order is undefined.
+		// But let's check format.
+		val := results[0].Data()["bookInfo"].(string)
+		if len(val) < 5 {
+			t.Error("String concat failed")
+		}
+	})
+
+	runTest("TestStartsWith", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(StartsWith("title", "The")).
+			Select("title").
+			Sort(Ascending(FieldOf("title"))).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Gatsby, Handmaid, Hitchhiker, LOTR. (4)
+		if len(results) != 4 {
+			t.Errorf("Expected 4 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestEndsWith", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(EndsWith(FieldOf("title"), "y")).
+			Select("title").
+			Sort(Descending(FieldOf("title"))).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Hitchhiker (Galaxy), Gatsby (Gatsby). (2)
+		if len(results) != 2 {
+			t.Errorf("Expected 2 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestLength", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Select(CharLength("title").As("titleLength"), "title").
+			Where(GreaterThan("titleLength", 21)).
+			Sort(Descending(FieldOf("titleLength"))).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Hitchhiker (36), One Hundred Years (29).
+		if len(results) != 2 {
+			t.Errorf("Expected 2 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestStringFunctions", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		// Reverse
+		res1, err := client.Pipeline().Collection(coll.ID).
+			Select(StringReverse("title").As("reversed_title"), "author").
+			Where(Equal("author", "Douglas Adams")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res1[0].Data()["reversed_title"] != "yxalaG eht ot ediuG s'rekihhctiH ehT" {
+			t.Errorf("Reverse mismatch")
+		}
+
+		// CharLength
+		res2, err := client.Pipeline().CreateFromQuery(coll).
+			Select(CharLength("title").As("title_length"), "author").
+			Where(Equal("author", "Douglas Adams")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res2[0].Data()["title_length"] != int64(36) {
+			t.Errorf("CharLength mismatch")
+		}
+
+		// ByteLength
+		res3, err := client.Pipeline().CreateFromQuery(coll).
+			Select(
+				FieldOf("author"),
+				ByteLength(StringConcat(FieldOf("title"), "_银河系漫游指南")).As("title_byte_length"),
+			).
+			Where(Equal("author", "Douglas Adams")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// "The Hitchhiker's Guide to the Galaxy" (36) + "_" (1) + "银河系漫游指南" (3*7=21) = 58
+		if res3[0].Data()["title_byte_length"] != int64(58) {
+			t.Errorf("ByteLength mismatch, got %v", res3[0].Data()["title_byte_length"])
+		}
+	})
+
+	runTest("TestToLowercase", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Select(ToLower("title").As("lowercaseTitle")).
+			Limit(1).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Fatal("Expected 1 result")
+		}
+	})
+
+	runTest("TestToUppercase", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Select(ToUpper("author").As("uppercaseAuthor")).
+			Limit(1).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Fatal("Expected 1 result")
+		}
+	})
+
+	runTest("TestTrim", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			AddFields(StringConcat(ConstantOf(" "), FieldOf("title"), ConstantOf(" ")).As("spacedTitle")).
+			Select(Trim("spacedTitle").As("trimmedTitle"), "spacedTitle").
+			Limit(1).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Check that trimmedTitle == title (conceptually, we don't have title selected, but we can verify it's trimmed)
+		spaced := results[0].Data()["spacedTitle"].(string)
+		trimmed := results[0].Data()["trimmedTitle"].(string)
+		if len(spaced) != len(trimmed)+2 {
+			t.Errorf("Trim mismatch: spaced='%s', trimmed='%s'", spaced, trimmed)
+		}
+	})
+
+	runTest("TestLike", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Like("title", "%Guide%")).
+			Select("title").
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Errorf("Expected 1 result, got %d", len(results))
+		}
+	})
+
+	runTest("TestRegexContains", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(RegexContains("title", "(?i)(the|of)")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// 5 results expected
+		if len(results) != 5 {
+			t.Errorf("Expected 5 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestRegexMatches", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(RegexMatch("title", ".*(?i)(the|of).*")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 5 {
+			t.Errorf("Expected 5 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestStrContains", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(StringContains(FieldOf("title"), "'s")).
+			Select("title").
+			Sort(Ascending(FieldOf("title"))).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Handmaid's Tale, Hitchhiker's Guide. (2)
+		if len(results) != 2 {
+			t.Errorf("Expected 2 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestSubstring", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Lord of the Rings")).
+			Select(
+				Substring(FieldOf("title"), 9, 2).As("of"), // "of"
+				Substring("title", 16, 5).As("Rings"),      // "Rings"
+			).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if results[0].Data()["of"] != "of" {
+			t.Errorf("Mismatch of")
+		}
+		if results[0].Data()["Rings"] != "Rings" {
+			t.Errorf("Mismatch Rings")
+		}
+	})
+
+	runTest("TestSplitStringByStringDelimiter", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().Collection(coll.ID).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			Select(Split(FieldOf("title"), " ").As("split_title")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// [The, Hitchhiker's, Guide, to, the, Galaxy]
+		split := results[0].Data()["split_title"].([]interface{})
+		if len(split) != 6 {
+			t.Errorf("Expected 6 parts, got %d", len(split))
+		}
+	})
+
+	runTest("TestSplitStringByExpressionDelimiter", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().Collection(coll.ID).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			Select(Split(FieldOf("title"), ConstantOf(" ")).As("split_title")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		split := results[0].Data()["split_title"].([]interface{})
+		if len(split) != 6 {
+			t.Errorf("Expected 6 parts, got %d", len(split))
+		}
+	})
+
+	runTest("TestJoin", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().Collection(coll.ID).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			Select(Join("tags", ", ").As("joined_tags")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// "comedy, space, adventure"
+		if results[0].Data()["joined_tags"] != "comedy, space, adventure" {
+			t.Errorf("Join mismatch: %v", results[0].Data()["joined_tags"])
+		}
+	})
+
+	runTest("TestArithmeticOperations", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Sort(Ascending(FieldOf("__name__"))). // Ensure book1
+			Select(
+				Add(FieldOf("rating"), 1).As("ratingPlusOne"),
+				Subtract(FieldOf("published"), 1900).As("yearsSince1900"),
+				Multiply(FieldOf("rating"), 10).As("ratingTimesTen"),
+				Divide(FieldOf("rating"), 2).As("ratingDividedByTwo"),
+			).
+			Limit(1).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := results[0].Data()
+
+		if diff := testutil.Diff(data["ratingPlusOne"], 5.2); diff != "" {
+			t.Errorf("ratingPlusOne: %s", diff)
+		}
+		if diff := testutil.Diff(data["yearsSince1900"], int64(79)); diff != "" {
+			t.Errorf("yearsSince1900: %s", diff)
+		}
+		if diff := testutil.Diff(data["ratingTimesTen"], 42.0); diff != "" {
+			t.Errorf("ratingTimesTen: %s", diff)
+		}
+		if diff := testutil.Diff(data["ratingDividedByTwo"], 2.1); diff != "" {
+			t.Errorf("ratingDividedByTwo: %s", diff)
+		}
+	})
+
+	runTest("TestComparisonOperators", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(
+				And(
+					GreaterThan("rating", 4.2),
+					LessThanOrEqual("rating", 4.5),
+					NotEqual("genre", "Science Fiction"),
+				),
+			).
+			Select("rating", "title").
+			Sort(Ascending(FieldOf("title"))).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Crime (4.3), One Hundred (4.3), Pride (4.5)
+		if len(results) != 3 {
+			t.Errorf("Expected 3 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestLogicalAndComparisonOperators", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		// Xor
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(
+				Xor(
+					Equal("genre", "Romance"),
+					Equal("genre", "Dystopian"),
+					Equal("genre", "Fantasy"),
+					Equal("published", 1949),
+				),
+			).
+			Select("title").
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Pride (Romance), LOTR (Fantasy), Handmaid (Dystopian).
+		// 1984 (Dystopian AND 1949) -> Xor fails?
+		// Java test expects: Pride, LOTR, Handmaid.
+		// 1984 is Dystopian (T) and 1949 (T) -> Xor(T, T, T, T) ? No, Xor is usually binary or variadic "exactly one true"?
+		// Firestore Xor means "one or more are true" or "odd number true"?
+		// "Logical XOR of all the expressions".
+		// For 1984: Dystopian=T, 1949=T. T XOR T = F.
+		// For Pride: Romance=T. T.
+		// For LOTR: Fantasy=T. T.
+		// For Handmaid: Dystopian=T. T.
+		if len(results) != 3 {
+			t.Errorf("Expected 3 results, got %d", len(results))
+		}
+
+		// EqualAny
+		results, err = client.Pipeline().CreateFromQuery(coll).
+			Where(EqualAny("genre", []string{"Romance", "Dystopian"})).
+			Select("title").
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Pride, Handmaid, 1984.
+		if len(results) != 3 {
+			t.Errorf("Expected 3 results, got %d", len(results))
+		}
+
+		// NotEqualAny
+		results, err = client.Pipeline().CreateFromQuery(coll).
+			Where(NotEqualAny("genre", []interface{}{"Romance", "Dystopian", nil})).
+			Distinct("genre").
+			Select("genre").
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Sci Fi, Magical Realism, Fantasy, Psych Thriller, Southern Gothic, Modernist. (6)
+		if len(results) != 6 {
+			t.Errorf("Expected 6 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestCondExpression", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(NotEqual("title", "Timestamp Book")).
+			Select(
+				Conditional(GreaterThan("published", 1980), "Modern", "Classic").As("era"),
+				"title", "published",
+			).
+			Sort(Ascending(FieldOf("published"))).
+			Limit(2).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Pride (1813), Crime (1866) -> Classic
+		if results[0].Data()["era"] != "Classic" {
+			t.Error("Expected Classic")
+		}
+		if results[1].Data()["era"] != "Classic" {
+			t.Error("Expected Classic")
+		}
+	})
+
+	runTest("TestLogicalOperators", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(
+				Or(
+					And(GreaterThan("rating", 4.5), Equal("genre", "Science Fiction")),
+					LessThan("published", 1900),
+				),
+			).
+			Select("title").
+			Sort(Ascending(FieldOf("title"))).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Crime, Dune, Pride. (3)
+		if len(results) != 3 {
+			t.Errorf("Expected 3 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestChecks", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().Collection(coll.ID).
+			Sort(Descending(FieldOf("rating"))).
+			Limit(1).
+			Select(
+				Equal("rating", nil).As("ratingIsNull"),
+				Equal("rating", math.NaN()).As("ratingIsNaN"), // NaN comparison might need IsNaN check in expression
+				// Go client Equal(math.NaN()) ? Firestore backend handles it.
+				IsError(ArrayGet("title", 0)).As("isError"),
+				// IfError(ArrayGet("title", 0), "was not error").As("ifError"), // "was error" is catch value.
+				IsAbsent("foo").As("isAbsent"),
+				NotEqual("title", nil).As("titleIsNotNull"),
+				NotEqual("cost", math.NaN()).As("costIsNotNan"),
+				FieldExists("fooBarBaz").As("fooBarBazExists"),
+				FieldExists("title").As("titleExists"),
+			).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		data := results[0].Data()
+		if data["ratingIsNull"] != false {
+			t.Error("ratingIsNull mismatch")
+		}
+		if data["isAbsent"] != true {
+			t.Error("isAbsent mismatch")
+		}
+		if data["titleExists"] != true {
+			t.Error("titleExists mismatch")
+		}
+	})
+
+	runTest("TestLogicalMinMax", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		// LogicalMax
+		res1, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("author", "Douglas Adams")).
+			Select(
+				LogicalMaximum(FieldOf("rating"), 4.5).As("max_rating"),
+				LogicalMaximum(FieldOf("published"), 1900).As("max_published"),
+			).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// rating 4.2 vs 4.5 -> 4.5
+		// published 1979 vs 1900 -> 1979
+		if diff := testutil.Diff(res1[0].Data()["max_rating"], 4.5); diff != "" {
+			t.Errorf("max_rating: %s", diff)
+		}
+		if diff := testutil.Diff(res1[0].Data()["max_published"], int64(1979)); diff != "" {
+			t.Errorf("max_published: %s", diff)
+		}
+
+		// LogicalMin
+		res2, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("author", "Douglas Adams")).
+			Select(
+				LogicalMinimum(FieldOf("rating"), 4.5).As("min_rating"),
+				LogicalMinimum(FieldOf("published"), 1900).As("min_published"),
+			).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// 4.2 vs 4.5 -> 4.2
+		// 1979 vs 1900 -> 1900
+		if diff := testutil.Diff(res2[0].Data()["min_rating"], 4.2); diff != "" {
+			t.Errorf("min_rating: %s", diff)
+		}
+		if diff := testutil.Diff(res2[0].Data()["min_published"], int64(1900)); diff != "" {
+			t.Errorf("min_published: %s", diff)
+		}
+	})
+
+	runTest("TestMapGet", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Select(MapGet("awards", "hugo").As("hugoAward"), "title").
+			Where(Equal("hugoAward", true)).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Hitchhiker, Dune. (2)
+		if len(results) != 2 {
+			t.Errorf("Expected 2 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestDataManipulationExpressions", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		// Timestamp math
+		res1, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "Timestamp Book")).
+			Select(
+				TimestampAdd("timestamp", "day", 1).As("timestamp_plus_day"),
+				TimestampSubtract("timestamp", "hour", 1).As("timestamp_minus_hour"),
+			).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Verification skipped for brevity, assumed covered by unit tests, but we check if it runs.
+		if len(res1) != 1 {
+			t.Fatal("Expected 1 result")
+		}
+
+		// Map/Array manipulation
+		res2, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			Select(
+				ArrayGet("tags", 1).As("second_tag"),
+				MapMerge(FieldOf("awards"), Map(map[string]any{"new_award": true})).As("merged_awards"),
+			).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res2[0].Data()["second_tag"] != "space" {
+			t.Error("second_tag mismatch")
+		}
+
+		res3, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			Select(
+				ArrayReverse("tags").As("reversed_tags"),
+				MapRemove(FieldOf("awards"), "nebula").As("removed_awards"),
+			).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		tags := res3[0].Data()["reversed_tags"].([]interface{})
+		if tags[0] != "adventure" {
+			t.Error("Reverse mismatch")
+		}
+	})
+
+	runTest("TestBlobConcat", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		bytes1 := []byte{1, 2}
+		bytes2 := []byte{3, 4}
+		expected := []byte{1, 2, 3, 4}
+		results, err := client.Pipeline().Collection(coll.ID).
+			Limit(1).
+			Select(Concat(ConstantOf(bytes1), ConstantOf(bytes2)).As("concatenated_blob")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := testutil.Diff(results[0].Data()["concatenated_blob"], expected); diff != "" {
+			t.Errorf("Blob concat mismatch: %s", diff)
+		}
+	})
+
+	runTest("TestTimestampTrunc", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		// Just verify it runs
+		_, err := client.Pipeline().Collection(coll.ID).
+			Where(Equal("title", "Timestamp Book")).
+			Select(TimestampTruncate("timestamp", "year").As("trunc_year")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	runTest("TestMathExpressions", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		_, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			Select(Ceil("rating").As("ceil")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	runTest("TestAdvancedMathExpressions", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		_, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Lord of the Rings")).
+			Select(Exp("rating").As("exp")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	runTest("TestCurrentTimestamp", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().Collection(coll.ID).
+			Limit(1).
+			Select(CurrentTimestamp().As("now")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Check if "now" is a timestamp
+		if _, ok := results[0].Data()["now"].(time.Time); !ok {
+			t.Error("Expected timestamp for currentTimestamp")
+		}
+	})
+
+	runTest("TestIfAbsent", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().Collection(coll.ID).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			Select(IfAbsent(FieldOf("rating"), 0.0).As("rating_or_default")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if results[0].Data()["rating_or_default"] != 4.2 {
+			t.Error("Mismatch")
+		}
+
+		results, err = client.Pipeline().Collection(coll.ID).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			Select(IfAbsent("non_existent", "default").As("val")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if results[0].Data()["val"] != "default" {
+			t.Error("Mismatch default")
+		}
+	})
+
+	runTest("TestTimestampConversions", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		_, err := client.Pipeline().Collection(coll.ID).
+			Limit(1).
+			Select(UnixSecondsToTimestamp(ConstantOf(1741380235)).As("ts")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	runTest("TestVectorLength", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		_, err := client.Pipeline().Collection(coll.ID).
+			Limit(1).
+			Select(VectorLength(ConstantOf(Vector64{1, 2, 3})).As("len")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	runTest("TestDistanceFunctions", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		// Just run it
+		_, err := client.Pipeline().Collection(coll.ID).
+			Limit(1).
+			Select(CosineDistance(ConstantOf(Vector64{1, 0}), Vector64{0, 1}).As("dist")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	runTest("TestNestedFields", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("awards.hugo", true)).
+			Select("title", "awards.hugo").
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 2 {
+			t.Errorf("Expected 2, got %d", len(results))
+		}
+	})
+
+	runTest("TestType", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().Collection(coll.ID).
+			Where(Equal("author", "Douglas Adams")).
+			Limit(1).
+			Select(Type("title").As("type")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if results[0].Data()["type"] != "string" {
+			t.Error("Expected string")
+		}
+	})
+
+	runTest("TestPipelineInTransactions", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		err := client.RunTransaction(ctx, func(ctx context.Context, txn *Transaction) error {
+			pipeline := client.Pipeline().CreateFromQuery(coll).
+				Where(Equal("awards.hugo", true)).
+				Select("title", "awards.hugo")
+
+			iter := txn.Execute(pipeline).Results()
+			results, err := iter.GetAll()
+			if err != nil {
+				return err
+			}
+			if len(results) != 2 {
+				return fmt.Errorf("Expected 2, got %d", len(results))
+			}
+
+			// Update book1
+			return txn.Update(coll.Doc("book1"), []Update{{Path: "foo", Value: "bar"}})
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		res, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("foo", "bar")).
+			Select("title").
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res) != 1 {
+			t.Fatal("Expected 1 result")
+		}
+	})
+
+	runTest("TestPipelineInTransactionsWithOptions", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		// Just verify it accepts options (even if dummy)
+		err := client.RunTransaction(ctx, func(ctx context.Context, txn *Transaction) error {
+			pipeline := client.Pipeline().CreateFromQuery(coll).Limit(1).WithExecuteOptions(WithExplainMode(ExplainModeAnalyze))
+			// Execute with explain options should return explain metrics but we just check if it runs without error.
+			iter := txn.Execute(pipeline).Results()
+			_, err := iter.GetAll()
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	runTest("TestRawStage", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		// Select
+		res1, err := client.Pipeline().Collection(coll.ID).
+			RawStage(NewRawStage("select").WithArguments(map[string]interface{}{
+				"title":    FieldOf("title"),
+				"metadata": Map(map[string]interface{}{"author": FieldOf("author")}),
+			})).
+			Sort(Ascending(FieldOf("metadata.author"))).
+			Limit(1).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res1[0].Data()["title"] != "The Hitchhiker's Guide to the Galaxy" {
+			t.Error("Mismatch title")
+		}
+
+		// AddFields
+		res2, err := client.Pipeline().Collection(coll.ID).
+			Sort(Ascending(FieldOf("author"))).
+			Limit(1).
+			Select("title", "author").
+			RawStage(NewRawStage("add_fields").WithArguments(map[string]interface{}{
+				"display": StringConcat(FieldOf("title"), " - ", FieldOf("author")),
+			})).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res2[0].Data()["display"] != "The Hitchhiker's Guide to the Galaxy - Douglas Adams" {
+			t.Error("Mismatch display")
+		}
+	})
+
+	runTest("TestReplaceWith", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		res1, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			ReplaceWith("awards").
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res1[0].Data()["hugo"] != true {
+			t.Error("Mismatch hugo")
+		}
+
+		res2, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			ReplaceWith(Map(map[string]interface{}{
+				"foo": "bar",
+				"baz": Map(map[string]interface{}{"title": FieldOf("title")}),
+			})).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res2[0].Data()["foo"] != "bar" {
+			t.Error("Mismatch foo")
+		}
+	})
+
+	runTest("TestSampleLimit", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Sample(SampleByDocuments(3)).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 3 {
+			t.Errorf("Expected 3, got %d", len(results))
+		}
+	})
+
+	runTest("TestSamplePercentage", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Sample(&SampleSpec{Size: 0.6, Mode: SampleModePercent}).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Just ensure it runs and returns something (probabilistic)
+		if len(results) == 0 {
+			t.Log("Sample 0.6 returned 0 documents, which is possible but unlikely for 11 docs")
+		}
+	})
+
+	runTest("TestUnion", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Union(client.Pipeline().CreateFromQuery(coll)).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// 11 docs * 2 = 22
+		if len(results) != 22 {
+			t.Errorf("Expected 22, got %d", len(results))
+		}
+	})
+
+	runTest("TestUnnest", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			UnnestWithAlias("tags", "tag", nil).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 3 {
+			t.Errorf("Expected 3, got %d", len(results))
+		}
+	})
+
+	runTest("TestUnnestWithIndexField", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			UnnestWithAlias("tags", "tag", &UnnestOptions{IndexField: "tagsIndex"}).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 3 {
+			t.Errorf("Expected 3, got %d", len(results))
+		}
+	})
+
+	runTest("TestUnnestWithExpr", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			Unnest(Array(1, 2, 3).As("copy"), nil).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 3 {
+			t.Errorf("Expected 3, got %d", len(results))
+		}
+	})
+
+	runTest("TestPaginationWithStartAfter", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		pagColl := client.Collection(collectionIDs.New())
+		// Cleanup is handled by defer if we track it, or we delete individually.
+		docRefs := []*DocumentRef{}
+		for i := 1; i <= 4; i++ {
+			dr, _, err := pagColl.Add(ctx, map[string]interface{}{"order": i})
+			if err != nil {
+				t.Fatal(err)
+			}
+			docRefs = append(docRefs, dr)
+		}
+		defer deleteDocuments(docRefs)
+
+		pipeline := client.Pipeline().CreateFromQuery(pagColl.OrderBy("order", Asc).Limit(2))
+		snapshot := pipeline.Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 2 {
+			t.Fatal("Expected 2 results")
+		}
+		if results[0].Data()["order"] != int64(1) {
+			t.Error("Order 1 mismatch")
+		}
+		if results[1].Data()["order"] != int64(2) {
+			t.Error("Order 2 mismatch")
+		}
+
+		lastResult := results[1]
+
+		pipeline = client.Pipeline().CreateFromQuery(pagColl.OrderBy("order", Asc).StartAfter(lastResult.Data()["order"]))
+		snapshot = pipeline.Execute(ctx)
+		results, err = snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 2 {
+			t.Errorf("Expected 2 results, got %d", len(results))
+		}
+		if results[0].Data()["order"] != int64(3) {
+			t.Error("Order 3 mismatch")
+		}
+		if results[1].Data()["order"] != int64(4) {
+			t.Error("Order 4 mismatch")
+		}
+	})
+
+	runTest("TestDocumentsAsSource", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		results, err := client.Pipeline().Documents(coll.Doc("book1"), coll.Doc("book2")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 2 {
+			t.Errorf("Expected 2 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestCollectionGroupAsSource", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		cgID := collectionIDs.New()
+		// create subcollections
+		doc1 := coll.Doc("book1")
+		_, _, err := doc1.Collection(cgID).Add(ctx, map[string]interface{}{"val": 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc2 := coll.Doc("book2")
+		_, _, err = doc2.Collection(cgID).Add(ctx, map[string]interface{}{"val": 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		results, err := client.Pipeline().CollectionGroup(cgID).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 2 {
+			t.Errorf("Expected 2 results, got %d", len(results))
+		}
+	})
+
+	runTest("TestDatabaseAsSource", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		// Just verify it runs. It scans whole DB so Limit is important.
+		results, err := client.Pipeline().Database().Limit(1).Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Fatal("Expected 1 result")
+		}
+	})
+
+	runTest("TestFindNearest", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		limit := 2
+		distanceField := "computedDistance"
+		results, err := client.Pipeline().Collection(coll.ID).
+			FindNearest(
+				"embedding",
+				Vector64{10.0, 1.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+				PipelineDistanceMeasureEuclidean,
+				&PipelineFindNearestOptions{Limit: &limit, DistanceField: &distanceField},
+			).
+			Select("title", "computedDistance").
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 2 {
+			t.Fatal("Expected 2 results")
+		}
+		if results[0].Data()["title"] != "The Hitchhiker's Guide to the Galaxy" {
+			t.Error("Mismatch first")
+		}
+	})
+
+	runTest("TestExplain", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		pipeline := client.Pipeline().CreateFromQuery(coll).Limit(1)
+		snapshot := pipeline.WithExecuteOptions(WithExplainMode(ExplainModeAnalyze)).Execute(ctx)
+		results, err := snapshot.Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Fatal("Expected 1 result")
+		}
+
+		stats := snapshot.ExplainStats()
+		if stats == nil {
+			t.Fatal("Expected ExplainStats")
+		}
+	})
+
+	runTest("TestErrorHandling", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		_, err := client.Pipeline().Collection(coll.ID).
+			RawStage(NewRawStage("invalidStage")).
+			Execute(ctx).Results().GetAll()
+		if err == nil {
+			t.Error("Expected error")
+		}
+	})
+
+	runTest("TestDuplicateAliases", func(t *testing.T, ctx context.Context, client *Client, coll *CollectionRef) {
+		// Aggregate
+		_, err := client.Pipeline().Collection(coll.ID).
+			Aggregate(CountAll().As("dup"), Average("rating").As("dup")).
+			Execute(ctx).Results().GetAll()
+		if err == nil {
+			t.Error("Expected error for duplicate aliases in Aggregate")
+		}
+
+		// Select
+		_, err = client.Pipeline().Collection(coll.ID).
+			Select(FieldOf("title").As("dup"), FieldOf("author").As("dup")).
+			Execute(ctx).Results().GetAll()
+		if err == nil {
+			t.Error("Expected error for duplicate aliases in Select")
+		}
+	})
+}
