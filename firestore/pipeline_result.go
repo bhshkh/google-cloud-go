@@ -32,20 +32,20 @@ import (
 // PipelineResult is a result returned from executing a pipeline.
 type PipelineResult struct {
 	// Ref is the DocumentRef for this result. It may be nil if the result
-	// does not correspond to a specific Firestore document (e.g., an aggregation result
-	// without grouping, or a synthetic document from a stage).
-	Ref *DocumentRef
+	// does not correspond to a specific Firestore document (e.g., an
+	// aggregation result without grouping, or a synthetic document from a stage).
+	ref *DocumentRef
 
 	// CreateTime is the time at which the document was created.
 	// It may be nil if the result does not correspond to a specific Firestore document
-	CreateTime *time.Time
+	createTime *time.Time
 
 	// UpdateTime is the time at which the document was last changed.
 	// It may be nil if the result does not correspond to a specific Firestore document
-	UpdateTime *time.Time
+	updateTime *time.Time
 
 	// ExecutionTime is the time at which the document(s) were read.
-	ExecutionTime *time.Time
+	executionTime *time.Time
 
 	c     *Client
 	proto *pb.Document
@@ -53,7 +53,7 @@ type PipelineResult struct {
 
 func newPipelineResult(ref *DocumentRef, proto *pb.Document, c *Client, executionTime *timestamppb.Timestamp) (*PipelineResult, error) {
 	pr := &PipelineResult{
-		Ref:   ref,
+		ref:   ref,
 		c:     c,
 		proto: proto,
 	}
@@ -63,14 +63,14 @@ func newPipelineResult(ref *DocumentRef, proto *pb.Document, c *Client, executio
 				return nil, err
 			}
 			createTime := proto.GetCreateTime().AsTime()
-			pr.CreateTime = &createTime
+			pr.createTime = &createTime
 		}
 		if proto.GetUpdateTime() != nil {
 			if err := proto.GetUpdateTime().CheckValid(); err != nil {
 				return nil, err
 			}
 			updateTime := proto.GetUpdateTime().AsTime()
-			pr.UpdateTime = &updateTime
+			pr.updateTime = &updateTime
 		}
 	}
 	if executionTime != nil {
@@ -78,7 +78,7 @@ func newPipelineResult(ref *DocumentRef, proto *pb.Document, c *Client, executio
 			return nil, err
 		}
 		execTime := executionTime.AsTime()
-		pr.ExecutionTime = &execTime
+		pr.executionTime = &execTime
 	}
 	return pr, nil
 }
@@ -87,6 +87,29 @@ func newPipelineResult(ref *DocumentRef, proto *pb.Document, c *Client, executio
 // Even if Exists returns false, the rest of the fields are valid.
 func (p *PipelineResult) Exists() bool {
 	return p.proto != nil
+}
+
+// Ref returns the DocumentRef for this result. It may be nil if the result
+// does not correspond to a specific Firestore document.
+func (p *PipelineResult) Ref() *DocumentRef {
+	return p.ref
+}
+
+// CreateTime returns the time at which the document was created.
+// It may be nil if the result does not correspond to a specific Firestore document.
+func (p *PipelineResult) CreateTime() *time.Time {
+	return p.createTime
+}
+
+// UpdateTime returns the time at which the document was last changed.
+// It may be nil if the result does not correspond to a specific Firestore document.
+func (p *PipelineResult) UpdateTime() *time.Time {
+	return p.updateTime
+}
+
+// ExecutionTime returns the time at which the document(s) were read.
+func (p *PipelineResult) ExecutionTime() *time.Time {
+	return p.executionTime
 }
 
 // Data returns the PipelineResult's fields as a map.
@@ -119,8 +142,9 @@ func (p *PipelineResult) DataTo(v any) error {
 
 // PipelineResultIterator is an iterator over PipelineResults from a pipeline execution.
 type PipelineResultIterator struct {
-	iter pipelineResultIteratorInternal
-	err  error // Stores sticky error from Next() or construction
+	iter     pipelineResultIteratorInternal
+	snapshot *PipelineSnapshot // The snapshot this iterator belongs to.
+	err      error             // Stores sticky error from Next() or construction
 }
 
 // Next returns the next result. Its second return value is iterator.Done if there
@@ -137,6 +161,10 @@ func (it *PipelineResultIterator) Next() (*PipelineResult, error) {
 	pr, err := it.iter.next()
 	if err != nil {
 		it.err = err // Store sticky error
+	}
+	if it.snapshot != nil && it.snapshot.executionTime == nil && pr != nil {
+		// Set the execution time on the parent snapshot from the first result.
+		it.snapshot.executionTime = pr.ExecutionTime()
 	}
 	return pr, err
 }

@@ -335,11 +335,11 @@ func TestPipelineResult_DataExtraction(t *testing.T) {
 	}
 
 	// Test Timestamps
-	if pr.CreateTime == nil || !pr.CreateTime.Equal(now) {
-		t.Errorf("CreateTime: got %v, want %v", pr.CreateTime, now)
+	if pr.CreateTime() == nil || !pr.CreateTime().Equal(now) {
+		t.Errorf("CreateTime: got %v, want %v", pr.CreateTime(), now)
 	}
-	if pr.ExecutionTime == nil || !pr.ExecutionTime.Equal(now.Add(time.Second)) {
-		t.Errorf("ExecutionTime: got %v, want %v", pr.ExecutionTime, now.Add(time.Second))
+	if pr.ExecutionTime() == nil || !pr.ExecutionTime().Equal(now.Add(time.Second)) {
+		t.Errorf("ExecutionTime: got %v, want %v", pr.ExecutionTime(), now.Add(time.Second))
 	}
 }
 
@@ -371,8 +371,8 @@ func TestPipelineResult_NoResults(t *testing.T) {
 		t.Errorf("Struct Foo for non-existent result: got %q, want \"\"", s.Foo)
 	}
 
-	if pr.ExecutionTime == nil || !pr.ExecutionTime.Equal(execTime) {
-		t.Errorf("ExecutionTime for non-existent result: got %v, want %v", pr.ExecutionTime, execTime)
+	if pr.ExecutionTime() == nil || !pr.ExecutionTime().Equal(execTime) {
+		t.Errorf("ExecutionTime for non-existent result: got %v, want %v", pr.ExecutionTime(), execTime)
 	}
 }
 
@@ -405,7 +405,7 @@ func TestPipelineResultIterator_ExplainStats(t *testing.T) {
 			p:       p,
 			statsPb: statsTextPb,
 		}
-		ps := &PipelineSnapshot{&PipelineResultIterator{iter: mockIter, err: iterator.Done}} // Pre-set to done
+		ps := &PipelineSnapshot{iter: &PipelineResultIterator{iter: mockIter, err: iterator.Done}} // Pre-set to done
 
 		stats := ps.ExplainStats()
 		if stats.err != nil {
@@ -428,7 +428,7 @@ func TestPipelineResultIterator_ExplainStats(t *testing.T) {
 			p:       p,
 			statsPb: statsRawPb,
 		}
-		ps := &PipelineSnapshot{&PipelineResultIterator{iter: mockIter, err: iterator.Done}}
+		ps := &PipelineSnapshot{iter: &PipelineResultIterator{iter: mockIter, err: iterator.Done}}
 
 		stats := ps.ExplainStats()
 		if stats.err != nil {
@@ -446,7 +446,7 @@ func TestPipelineResultIterator_ExplainStats(t *testing.T) {
 
 	t.Run("error case - iterator not done", func(t *testing.T) {
 		mockIter := &streamPipelineResultIterator{}
-		ps := &PipelineSnapshot{&PipelineResultIterator{iter: mockIter}} // err is nil
+		ps := &PipelineSnapshot{iter: &PipelineResultIterator{iter: mockIter}} // err is nil
 
 		stats := ps.ExplainStats()
 		if stats.err == nil {
@@ -467,7 +467,7 @@ func TestPipelineResultIterator_ExplainStats(t *testing.T) {
 
 	t.Run("error case - GetText with wrong data type", func(t *testing.T) {
 		mockIter := &streamPipelineResultIterator{statsPb: statsRawPb}
-		ps := &PipelineSnapshot{&PipelineResultIterator{iter: mockIter, err: iterator.Done}}
+		ps := &PipelineSnapshot{iter: &PipelineResultIterator{iter: mockIter, err: iterator.Done}}
 
 		stats := ps.ExplainStats()
 		_, err := stats.Text()
@@ -478,7 +478,7 @@ func TestPipelineResultIterator_ExplainStats(t *testing.T) {
 
 	t.Run("no stats available", func(t *testing.T) {
 		mockIter := &streamPipelineResultIterator{statsPb: nil} // No stats
-		ps := &PipelineSnapshot{&PipelineResultIterator{iter: mockIter, err: iterator.Done}}
+		ps := &PipelineSnapshot{iter: &PipelineResultIterator{iter: mockIter, err: iterator.Done}}
 
 		stats := ps.ExplainStats()
 		if stats.err != nil {

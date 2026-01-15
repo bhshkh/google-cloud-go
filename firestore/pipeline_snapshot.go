@@ -17,9 +17,9 @@ package firestore
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	pb "cloud.google.com/go/firestore/apiv1/firestorepb"
-	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -29,10 +29,16 @@ import (
 // to iterate over the documents and access metadata about the query results.
 type PipelineSnapshot struct {
 	iter *PipelineResultIterator
+	// executionTime is the time at which the query was executed.
+	// It is populated after the first result is received from the iterator.
+	executionTime *time.Time
 }
 
 // Results returns an iterator over the query results.
 func (ps *PipelineSnapshot) Results() *PipelineResultIterator {
+	if ps.iter.snapshot == nil {
+		ps.iter.snapshot = ps
+	}
 	return ps.iter
 }
 
@@ -45,11 +51,20 @@ func (ps *PipelineSnapshot) ExplainStats() *ExplainStats {
 	if ps.iter == nil {
 		return &ExplainStats{err: errors.New("firestore: PipelineResultIterator is nil")}
 	}
-	if ps.iter.err == nil || ps.iter.err != iterator.Done {
+	if ps.iter.err == nil {
 		return &ExplainStats{err: errStatsBeforeEnd}
 	}
 	statsPb, statsErr := ps.iter.iter.getExplainStats()
 	return &ExplainStats{statsPb: statsPb, err: statsErr}
+}
+
+// ExecutionTime returns the time at which the query was executed.
+// It is available after the first result is received. Before that, it returns nil.
+func (ps *PipelineSnapshot) ExecutionTime() *time.Time {
+	if ps == nil {
+		return nil
+	}
+	return ps.executionTime
 }
 
 // ExplainStats is query explain stats.

@@ -103,11 +103,13 @@ func (p *Pipeline) Execute(ctx context.Context) *PipelineSnapshot {
 	ctx = withResourceHeader(ctx, p.c.path())
 	ctx = withRequestParamsHeader(ctx, reqParamsHeaderVal(p.c.path()))
 
-	return &PipelineSnapshot{
-		iter: &PipelineResultIterator{
-			iter: newStreamPipelineResultIterator(ctx, p),
-		},
+	ps := &PipelineSnapshot{}
+	iter := &PipelineResultIterator{
+		iter:     newStreamPipelineResultIterator(ctx, p),
+		snapshot: ps,
 	}
+	ps.iter = iter
+	return ps
 }
 
 func (p *Pipeline) toExecutePipelineRequest() (*pb.ExecutePipelineRequest, error) {
