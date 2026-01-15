@@ -3565,3 +3565,103 @@ func TestIntegration_FindNearest(t *testing.T) {
 		})
 	}
 }
+
+/*
+The evaluation of the test files reveals a high degree of correspondence, but not a strict 1:1 mapping for every single test case.
+
+  General Observation
+   * Java File: ITPipelineTest.java contains a comprehensive suite of integration tests for the Firestore Aggregation Pipeline.
+   * Go File: pipeline_integration_test.go contains multiple test functions. Notably, TestIntegration_ITPipelineTest (starting at line
+     3519) appears to be a direct port of the Java test suite, using a helper runTest to mirror the Java test names and logic (e.g.,
+     TestAllDataTypes, TestResultMetadata).
+   * Data Setup: Both files use an identical "Books" dataset for testing.
+
+  Coverage Analysis
+
+   1. Directly Mapped Tests (Found in `TestIntegration_ITPipelineTest`):
+      Most functional tests are present and map 1:1:
+       * testAllDataTypes -> TestAllDataTypes
+       * testResultMetadata -> TestResultMetadata
+       * testResultIsEqual -> TestResultIsEqual
+       * testEmptyResultMetadata -> TestEmptyResultMetadata
+       * testAggregateResultMetadata -> TestAggregateResultMetadata
+       * selectSpecificFields -> SelectSpecificFields
+       * addAndRemoveFields -> AddAndRemoveFields
+       * whereByMultipleConditions -> WhereByMultipleConditions
+       * whereByOrCondition -> WhereByOrCondition
+       * testPipelineWithOffsetAndLimit -> TestPipelineWithOffsetAndLimit
+       * testAggregates -> TestAggregates
+       * testMoreAggregates -> TestMoreAggregates
+       * testCountIfAggregate -> TestCountIfAggregate
+       * testGroupBysWithoutAccumulators -> TestGroupBysWithoutAccumulators
+       * testDistinct -> TestDistinct
+       * testGroupBysAndAggregate -> TestGroupBysAndAggregate
+       * testMinMax -> TestMinMax
+       * testArraySum -> TestArraySum
+       * testArrayContains / Any / All -> TestArrayContains / Any / All
+       * testArrayLength -> TestArrayLength
+       * testArrayConcat -> TestArrayConcat
+       * testStrConcat -> TestStrConcat
+       * testStartsWith / EndsWith -> TestStartsWith / EndsWith
+       * testLength -> TestLength
+       * testStringFunctions -> TestStringFunctions
+       * testToLowercase / ToUppercase -> TestToLowercase / ToUppercase
+       * testTrim -> TestTrim
+       * testLike -> TestLike
+       * testRegexContains / Matches -> TestRegexContains / TestRegexMatches
+       * testStrContains -> TestStrContains
+       * testSubstring -> TestSubstring
+       * testSplit... (String/Expression delimiters) -> TestSplitStringByStringDelimiter, TestSplitStringByExpressionDelimiter
+       * testJoin -> TestJoin
+       * testArithmeticOperations -> TestArithmeticOperations
+       * testComparisonOperators -> TestComparisonOperators
+       * testLogicalAndComparisonOperators -> TestLogicalAndComparisonOperators
+       * testCondExpression -> TestCondExpression
+       * testLogicalOperators -> TestLogicalOperators
+       * testChecks -> TestChecks
+       * testLogicalMinMax -> TestLogicalMinMax
+       * testMapGet -> TestMapGet
+       * testDataManipulationExpressions -> TestDataManipulationExpressions
+       * testConcat (Blob) -> TestBlobConcat
+       * testTimestampTrunc -> TestTimestampTrunc
+       * testMathExpressions -> TestMathExpressions
+       * testAdvancedMathExpressions -> TestAdvancedMathExpressions
+       * testCurrentTimestamp -> TestCurrentTimestamp
+       * testIfAbsent -> TestIfAbsent
+       * testTimestampConversions -> TestTimestampConversions
+       * testVectorLength -> TestVectorLength
+       * testDistanceFunctions -> TestDistanceFunctions
+       * testNestedFields -> TestNestedFields
+       * testType -> TestType
+       * testPipelineInTransactions -> TestPipelineInTransactions
+       * testRawStage -> TestRawStage
+       * testReplaceWith -> TestReplaceWith
+       * testSampleLimit / Percentage -> TestSampleLimit / TestSamplePercentage
+       * testUnion -> TestUnion
+       * testUnnest variants -> TestUnnest variants
+
+   2. Tests Covered Elsewhere in Go File:
+      Some tests found in Java's ITPipelineTest are not in the Go TestIntegration_ITPipelineTest suite but are covered by other Go test
+  functions:
+       * testDocumentsAsSource -> Covered by TestIntegration_PipelineStages/Documents
+       * testCollectionGroupAsSource -> Covered by TestIntegration_PipelineStages/CollectionGroup
+       * testDatabaseAsSource -> Covered by TestIntegration_PipelineStages/Database
+
+   3. Missing Tests (Potential Gaps in Go):
+      The following Java tests do not appear to have an equivalent in the Go file:
+       * testExplain: Tests ExplainOptions and ExplainMetrics.
+       * testOptions: Tests execution options and constraints (e.g., verifying invalid options throw exceptions).
+       * testErrorHandling: Tests invalid stage names.
+       * testExplainWithError: Tests explain mode with resource exhaustion or other errors.
+       * testCrossDatabaseRejection: Tests rejecting collection references from other projects/databases.
+       * disallowDuplicateAliases... (5 tests): Tests validation logic that prevents duplicate aliases in Aggregate, Select, AddFields,
+         Distinct, and across stages.
+       * testPaginationWithStartAfter: Tests creating a pipeline from a query that uses startAfter (cursor pagination).
+       * testSplitBlobByByteArrayDelimiter: Go has TestSplitString... but seemingly misses the Blob delimiter test case.
+       * testSplitStringFieldByStringDelimiter / ExpressionDelimiter: Go has TestSplitStringBy... but strictly checking if it covers field
+         vs literal variations might be needed (it seems to cover field).
+
+  Summary
+  There is a very strong, intentional 1:1 mapping for the vast majority of functional pipeline tests. However, validation (duplicate
+  aliases), error handling, and explain/profiling tests are largely missing from the Go implementation compared to the Java file.
+*/
