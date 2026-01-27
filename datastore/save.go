@@ -288,11 +288,17 @@ func saveSliceProperty(props *[]Property, name string, opts saveOpts, v reflect.
 			return err
 		}
 		for _, p := range elemProps {
-			v, ok := values[p.Name]
-			if !ok {
-				return fmt.Errorf("datastore: unexpected property %q in elem %d of slice", p.Name, i)
+			if len(values) != 0 {
+				v, ok := values[p.Name]
+				if !ok {
+					return fmt.Errorf("datastore: unexpected property %q in elem %d of slice", p.Name, i)
+				}
+				values[p.Name] = append(v, p.Value)
+			} else {
+				// This is the first non-empty element
+				values[p.Name] = []interface{}{p.Value}
+				headProps = elemProps
 			}
-			values[p.Name] = append(v, p.Value)
 		}
 	}
 
