@@ -377,14 +377,15 @@ func (p *Pipeline) AddFields(selectables ...Selectable) *Pipeline {
 }
 
 // RemoveFields removes fields from outputs from previous stages.
+// fieldpaths can be a string or a [FieldPath] or an expression obtained by calling [FieldOf].
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
-func (p *Pipeline) RemoveFields(fieldpaths ...any) *Pipeline {
+func (p *Pipeline) RemoveFields(fields ...any) *Pipeline {
 	if p.err != nil {
 		return p
 	}
-	stage, err := newRemoveFieldsStage(fieldpaths...)
+	stage, err := newRemoveFieldsStage(fields...)
 	if err != nil {
 		p.err = err
 		return p
@@ -508,7 +509,7 @@ func (p *Pipeline) Unnest(field Selectable, opts *UnnestOptions) *Pipeline {
 	if p.err != nil {
 		return p
 	}
-	stage, err := newUnnestStageFromSelectable(field, opts)
+	stage, err := newUnnestStage("Unnest", field, opts)
 	if err != nil {
 		p.err = err
 		return p
@@ -533,11 +534,11 @@ func (p *Pipeline) UnnestWithAlias(fieldpath any, alias string, opts *UnnestOpti
 	case FieldPath:
 		fieldExpr = FieldOf(v)
 	default:
-		p.err = errInvalidArg(fieldpath, "string", "FieldPath")
+		p.err = errInvalidArg("UnnestWithAlias", fieldpath, "string", "FieldPath")
 		return p
 	}
 
-	stage, err := newUnnestStage(fieldExpr, alias, opts)
+	stage, err := newUnnestStage("UnnestWithAlias", fieldExpr.As(alias), opts)
 	if err != nil {
 		p.err = err
 		return p

@@ -405,7 +405,7 @@ func TestUnionStage(t *testing.T) {
 }
 
 func TestUnnestStage(t *testing.T) {
-	stage, err := newUnnestStage(FieldOf("tags"), "tag", &UnnestOptions{IndexField: "index"})
+	stage, err := newUnnestStage("Unnest", FieldOf("tags").As("tag"), &UnnestOptions{IndexField: "index"})
 	if err != nil {
 		t.Fatalf("newUnnestStage() failed: %v", err)
 	}

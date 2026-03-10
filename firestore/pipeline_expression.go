@@ -360,6 +360,12 @@ type Expression interface {
 	Average() AggregateFunction
 	// Count creates an aggregate function that counts the number of documents.
 	Count() AggregateFunction
+	// CountDistinct creates an aggregate function that counts the distinct values of the expression.
+	CountDistinct() AggregateFunction
+	// Maximum creates an aggregate function that finds the maximum value of the expression.
+	Maximum() AggregateFunction
+	// Minimum creates an aggregate function that finds the minimum value of the expression.
+	Minimum() AggregateFunction
 
 	// String functions
 	// ByteLength creates an expression that calculates the length of a string represented by a field or [Expression] in UTF-8

@@ -32,8 +32,8 @@ type baseStage struct {
 func (s *baseStage) name() string                         { return s.stageName }
 func (s *baseStage) toProto() (*pb.Pipeline_Stage, error) { return s.stagePb, nil }
 
-func errInvalidArg(v any, expected ...string) error {
-	return fmt.Errorf("firestore: invalid argument type: %T, expected one of: [%s]", v, strings.Join(expected, ", "))
+func errInvalidArg(stageName string, v any, expected ...string) error {
+	return fmt.Errorf("firestore: invalid argument type for stage %s: %T, expected one of: [%s]", stageName, v, strings.Join(expected, ", "))
 }
 
 const (
@@ -200,6 +200,9 @@ func newAggregateStage(a *AggregateSpec) (*aggregateStage, error) {
 	if a.err != nil {
 		return nil, a.err
 	}
+	if len(a.accTargets) == 0 {
+		return nil, fmt.Errorf("firestore: the 'aggregate' stage requires at least one accumulator")
+	}
 	targetsPb, err := aliasedAggregatesToMapValue(a.accTargets)
 	if err != nil {
 		return nil, err
@@ -263,7 +266,7 @@ func newFindNearestStage(vectorField any, queryVector any, measure PipelineDista
 	case Expression:
 		propertyExpr = v
 	default:
-		return nil, errInvalidArg(vectorField, "string", "FieldPath", "Expression")
+		return nil, errInvalidArg("FindNearest", vectorField, "string", "FieldPath", "Expression")
 	}
 	propPb, err := propertyExpr.toProto()
 	if err != nil {
@@ -347,8 +350,10 @@ func newRemoveFieldsStage(fieldpaths ...any) (*removeFieldsStage, error) {
 			fields[i] = FieldOf(v)
 		case FieldPath:
 			fields[i] = FieldOf(v)
+		case *field:
+			fields[i] = v
 		default:
-			return nil, errInvalidArg(fp, "string", "FieldPath")
+			return nil, errInvalidArg("RemoveFields", fp, "string", "FieldPath", "expression obtained by calling FieldOf")
 		}
 	}
 	args := make([]*pb.Value, len(fields))
@@ -382,7 +387,7 @@ func newReplaceWithStage(fieldpathOrExpr any) (*replaceWithStage, error) {
 	case Expression:
 		expr = v
 	default:
-		return nil, errInvalidArg(fieldpathOrExpr, "string", "FieldPath", "Expression")
+		return nil, errInvalidArg("ReplaceWith", fieldpathOrExpr, "string", "FieldPath", "Expression")
 	}
 	exprPb, err := expr.toProto()
 	if err != nil {
@@ -495,8 +500,9 @@ type unnestStage struct {
 	baseStage
 }
 
-func newUnnestStage(fieldExpr Expression, alias string, opts *UnnestOptions) (*unnestStage, error) {
-	exprPb, err := fieldExpr.toProto()
+func newUnnestStage(callerName string, field Selectable, opts *UnnestOptions) (*unnestStage, error) {
+	alias, expr := field.getSelectionDetails()
+	exprPb, err := expr.toProto()
 	if err != nil {
 		return nil, err
 	}
@@ -513,7 +519,7 @@ func newUnnestStage(fieldExpr Expression, alias string, opts *UnnestOptions) (*u
 		case string:
 			indexFieldExpr = FieldOf(v)
 		default:
-			return nil, errInvalidArg(opts.IndexField, "string", "FieldPath")
+			return nil, errInvalidArg(callerName, opts.IndexField, "string", "FieldPath")
 		}
 		indexPb, err := indexFieldExpr.toProto()
 		if err != nil {
@@ -530,11 +536,6 @@ func newUnnestStage(fieldExpr Expression, alias string, opts *UnnestOptions) (*u
 			Options: optionsPb,
 		},
 	}}, nil
-}
-
-func newUnnestStageFromSelectable(field Selectable, opts *UnnestOptions) (*unnestStage, error) {
-	alias, expr := field.getSelectionDetails()
-	return newUnnestStage(expr, alias, opts)
 }
 
 type whereStage struct {
