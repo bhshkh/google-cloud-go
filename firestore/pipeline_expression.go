@@ -187,6 +187,10 @@ type Expression interface {
 	//
 	// The parameter 'search' is the value to search for. It can be a constant or [Expression].
 	ArrayIndexOfAll(search any) Expression
+	// ArrayLastIndexOf creates an expression that returns the last index of a search value in an array.
+	//
+	// The parameter 'search' is the value to search for. It can be a constant or [Expression].
+	ArrayLastIndexOf(search any) Expression
 	// First returns the value of the expression for the first document in the group.
 	First() AggregateFunction
 	// Last returns the value of the expression for the last document in the group.
@@ -206,6 +210,10 @@ type Expression interface {
 	// The parameter 'param' is the name of the parameter to use in the body expression.
 	// The parameter 'body' is the expression to evaluate for each element of the array.
 	ArrayFilter(param string, body BooleanExpression) Expression
+	// LogicalMaximum returns the maximum value of the expression and the specified values.
+	LogicalMaximum(others ...any) Expression
+	// LogicalMinimum returns the minimum value of the expression and the specified values.
+	LogicalMinimum(others ...any) Expression
 
 	// Timestamp operations
 	// TimestampAdd creates an expression that adds a specified amount of time to a timestamp.
@@ -315,6 +323,14 @@ type Expression interface {
 	//
 	// The parameter 'catchExprOrValue' is the expression or value to return if the receiver expression errors.
 	IfError(catchExprOrValue any) Expression
+	// IsError returns a boolean expression that checks if the expression evaluates to an error.
+	IsError() BooleanExpression
+	// FieldExists returns a boolean expression that checks if the field exists.
+	FieldExists() BooleanExpression
+	// Exists is an alias for FieldExists.
+	Exists() BooleanExpression
+	// IsAbsent returns a boolean expression that checks if the field is absent.
+	IsAbsent() BooleanExpression
 	// IfAbsent creates an expression that returns a default value if an expression evaluates to an absent value.
 	//
 	// The parameter 'catchExprOrValue' is the value to return if the expression is absent.
@@ -562,12 +578,21 @@ func (b *baseExpression) ArrayIndexOf(search, direction any) Expression {
 func (b *baseExpression) ArrayIndexOfAll(search any) Expression {
 	return ArrayIndexOfAll(b, search)
 }
+func (b *baseExpression) ArrayLastIndexOf(search any) Expression {
+	return ArrayLastIndexOf(b, search)
+}
 func (b *baseExpression) First() AggregateFunction            { return First(b) }
 func (b *baseExpression) Last() AggregateFunction             { return Last(b) }
 func (b *baseExpression) ArrayAgg() AggregateFunction         { return ArrayAgg(b) }
 func (b *baseExpression) ArrayAggDistinct() AggregateFunction { return ArrayAggDistinct(b) }
 func (b *baseExpression) ArrayFilter(param string, body BooleanExpression) Expression {
 	return ArrayFilter(b, param, body)
+}
+func (b *baseExpression) LogicalMaximum(others ...any) Expression {
+	return LogicalMaximum(b, others...)
+}
+func (b *baseExpression) LogicalMinimum(others ...any) Expression {
+	return LogicalMinimum(b, others...)
 }
 
 // Timestamp functions
@@ -615,7 +640,6 @@ func (b *baseExpression) LessThanOrEqual(other any) BooleanExpression {
 func (b *baseExpression) Length() Expression              { return Length(b) }
 func (b *baseExpression) Reverse() Expression             { return Reverse(b) }
 func (b *baseExpression) Concat(others ...any) Expression { return Concat(b, others...) }
-
 // Key functions
 func (b *baseExpression) GetCollectionID() Expression { return GetCollectionID(b) }
 func (b *baseExpression) GetDocumentID() Expression   { return GetDocumentID(b) }
@@ -623,6 +647,20 @@ func (b *baseExpression) GetDocumentID() Expression   { return GetDocumentID(b) 
 // Logical functions
 func (b *baseExpression) IfError(catchExprOrValue any) Expression {
 	return IfError(b, catchExprOrValue)
+}
+func (b *baseExpression) IsError() BooleanExpression {
+	return IsError(b)
+}
+func (b *baseExpression) FieldExists() BooleanExpression {
+	return FieldExists(b)
+}
+
+func (b *baseExpression) Exists() BooleanExpression {
+	return FieldExists(b)
+}
+
+func (b *baseExpression) IsAbsent() BooleanExpression {
+	return IsAbsent(b)
 }
 func (b *baseExpression) IfAbsent(catchExprOrValue any) Expression {
 	return IfAbsent(b, catchExprOrValue)

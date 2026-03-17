@@ -584,6 +584,16 @@ func ArrayIndexOf(exprOrFieldPath any, search any, direction any) Expression {
 	return newBaseFunction("array_index_of", []Expression{asFieldExpr(exprOrFieldPath), toExprOrConstant(search), toExprOrConstant(direction)})
 }
 
+// ArrayLastIndexOf creates an expression that returns the last index of a search value in an array.
+// - exprOrFieldPath can be a field path string, [FieldPath] or an [Expression] that evaluates to an array.
+// - search is the value to search for. It can be a constant or [Expression].
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+func ArrayLastIndexOf(exprOrFieldPath any, search any) Expression {
+	return ArrayIndexOf(exprOrFieldPath, search, "last")
+}
+
 // ArrayIndexOfAll creates an expression that returns the indices of all occurrences of a search value in an array.
 // - exprOrFieldPath can be a field path string, [FieldPath] or an [Expression] that evaluates to an array.
 // - search is the value to search for. It can be a constant or [Expression].
