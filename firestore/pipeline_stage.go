@@ -211,6 +211,17 @@ func newAggregateStage(a *AggregateSpec) (*aggregateStage, error) {
 	if err != nil {
 		return nil, err
 	}
+	var optionsPb map[string]*pb.Value
+	if len(a.hints) > 0 {
+		optionsPb = make(map[string]*pb.Value)
+		for k, v := range a.hints {
+			pbVal, _, err := toProtoValue(reflect.ValueOf(v))
+			if err != nil {
+				return nil, fmt.Errorf("firestore: invalid hint %q: %w", k, err)
+			}
+			optionsPb[k] = pbVal
+		}
+	}
 	return &aggregateStage{baseStage{
 		stageName: stageNameAggregate,
 		stagePb: &pb.Pipeline_Stage{
@@ -219,6 +230,7 @@ func newAggregateStage(a *AggregateSpec) (*aggregateStage, error) {
 				targetsPb,
 				groupsPb,
 			},
+			Options: optionsPb,
 		},
 	}}, nil
 }
@@ -500,7 +512,7 @@ type unnestStage struct {
 	baseStage
 }
 
-func newUnnestStage(callerName string, field Selectable, opts *UnnestOptions) (*unnestStage, error) {
+func newUnnestStage(callerName string, field Selectable, opts *unnestSettings) (*unnestStage, error) {
 	alias, expr := field.getSelectionDetails()
 	exprPb, err := expr.toProto()
 	if err != nil {

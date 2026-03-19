@@ -136,8 +136,7 @@ func TestIntegration_PipelineExecute(t *testing.T) {
 
 		snap := client.Pipeline().Collection(coll.ID).
 			Limit(1).
-			WithExecuteOptions(WithExplainMode(ExplainModeAnalyze)).
-			Execute(ctx)
+			Execute(ctx, WithExplainMode(ExplainModeAnalyze))
 
 		_, err := snap.Results().GetAll()
 		if err != nil {
@@ -797,7 +796,7 @@ func TestIntegration_PipelineStages(t *testing.T) {
 	t.Run("UnnestWithIndexField", func(t *testing.T) {
 		iter := client.Pipeline().Collection(coll.ID).
 			Where(Equal(FieldOf("title"), "The Hitchhiker's Guide to the Galaxy")).
-			UnnestWithAlias("tags", "tag", &UnnestOptions{IndexField: "tagIndex"}).
+			UnnestWithAlias("tags", "tag", WithUnnestIndexField("tagIndex")).
 			Select("title", "tag", "tagIndex").
 			Execute(ctx).Results()
 		defer iter.Stop()

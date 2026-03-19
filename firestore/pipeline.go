@@ -17,6 +17,7 @@ package firestore
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	pb "cloud.google.com/go/firestore/apiv1/firestorepb"
 )
@@ -60,6 +61,7 @@ func newPipeline(client *Client, initialStage pipelineStage) *Pipeline {
 type executeSettings struct {
 	ExplainOptions *executeExplainOptions
 	IndexMode      string
+	RawOptions     map[string]any
 }
 
 // ExecuteOption is an option for executing a pipeline query.
@@ -93,6 +95,8 @@ type ExplainMode string
 const (
 	// ExplainModeAnalyze both plans and executes the query.
 	ExplainModeAnalyze ExplainMode = "analyze"
+	// ExplainModePlan only plans the query.
+	ExplainModePlan ExplainMode = "plan"	
 )
 
 // executeExplainOptions are options for explaining a pipeline execution.
@@ -110,17 +114,54 @@ func WithExplainMode(mode ExplainMode) ExecuteOption {
 	})
 }
 
+// WithIndexMode sets the IndexMode for pipeline explain.
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+func WithIndexMode(mode string) ExecuteOption {
+	return newFuncExecuteOption(func(eo *executeSettings) {
+		eo.IndexMode = mode
+	})
+}
+
+// WithRawOptions specifies raw options to be passed to the Firestore backend.
+// These options are not validated by the SDK and are passed directly to the backend.
+// Options specified here will take precedence over any options with the same name set by the SDK.
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+func WithRawOptions(options map[string]any) ExecuteOption {
+	return newFuncExecuteOption(func(eo *executeSettings) {
+		if eo.RawOptions == nil {
+			eo.RawOptions = make(map[string]any)
+		}
+		for k, v := range options {
+			eo.RawOptions[k] = v
+		}
+	})
+}
+
 // Execute executes the pipeline and returns a snapshot of the results.
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
-func (p *Pipeline) Execute(ctx context.Context) *PipelineSnapshot {
-	ctx = withResourceHeader(ctx, p.c.path())
-	ctx = withRequestParamsHeader(ctx, reqParamsHeaderVal(p.c.path()))
+func (p *Pipeline) Execute(ctx context.Context, opts ...ExecuteOption) *PipelineSnapshot {
+	newP := p
+	if len(opts) > 0 {
+		newP = p.copy()
+		for _, opt := range opts {
+			if opt != nil {
+				opt.apply(newP.executeSettings)
+			}
+		}
+	}
+
+	ctx = withResourceHeader(ctx, newP.c.path())
+	ctx = withRequestParamsHeader(ctx, reqParamsHeaderVal(newP.c.path()))
 
 	return &PipelineSnapshot{
 		iter: &PipelineResultIterator{
-			iter: newStreamPipelineResultIterator(ctx, p),
+			iter: newStreamPipelineResultIterator(ctx, newP),
 		},
 	}
 }
@@ -141,6 +182,14 @@ func (p *Pipeline) toExecutePipelineRequest() (*pb.ExecutePipelineRequest, error
 	}
 	if p.executeSettings.IndexMode != "" {
 		options["index_mode"] = &pb.Value{ValueType: &pb.Value_StringValue{StringValue: p.executeSettings.IndexMode}}
+	}
+
+	for k, v := range p.executeSettings.RawOptions {
+		pbVal, _, err := toProtoValue(reflect.ValueOf(v))
+		if err != nil {
+			return nil, fmt.Errorf("firestore: error converting raw option %q: %w", k, err)
+		}
+		options[k] = pbVal
 	}
 
 	req := &pb.ExecutePipelineRequest{
@@ -209,19 +258,7 @@ func (p *Pipeline) WithReadOptions(opts ...ReadOption) *Pipeline {
 	return newP
 }
 
-// WithExecuteOptions specifies options for executing a pipeline.
-//
-// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
-// regardless of any other documented package stability guarantees.
-func (p *Pipeline) WithExecuteOptions(opts ...ExecuteOption) *Pipeline {
-	newP := p.copy()
-	for _, opt := range opts {
-		if opt != nil {
-			opt.apply(newP.executeSettings)
-		}
-	}
-	return newP
-}
+
 
 // append creates a new Pipeline by adding a stage to the current one.
 func (p *Pipeline) append(s pipelineStage) *Pipeline {
@@ -418,6 +455,7 @@ func (p *Pipeline) Where(condition BooleanExpression) *Pipeline {
 type AggregateSpec struct {
 	groups     []Selectable
 	accTargets []*AliasedAggregate
+	hints      map[string]any
 	err        error
 }
 
@@ -435,6 +473,15 @@ func NewAggregateSpec(accumulators ...*AliasedAggregate) *AggregateSpec {
 // regardless of any other documented package stability guarantees.
 func (a *AggregateSpec) WithGroups(fieldpathsOrSelectables ...any) *AggregateSpec {
 	a.groups, a.err = fieldsOrSelectablesToSelectables(fieldpathsOrSelectables...)
+	return a
+}
+
+// WithHints sets the hints for the aggregation.
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+func (a *AggregateSpec) WithHints(hints map[string]any) *AggregateSpec {
+	a.hints = hints
 	return a
 }
 
@@ -488,13 +535,41 @@ func (p *Pipeline) AggregateWithSpec(spec *AggregateSpec) *Pipeline {
 	return p.append(aggStage)
 }
 
-// UnnestOptions holds the configuration for the Unnest stage.
+// unnestSettings holds the configuration for the Unnest stage.
+type unnestSettings struct {
+	IndexField any
+}
+
+// UnnestOption is an option for executing a pipeline unnest stage.
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
-type UnnestOptions struct {
-	// IndexField specifies the name of the field to store the array index of the unnested element.
-	IndexField any
+type UnnestOption interface {
+	apply(*unnestSettings)
+}
+
+type funcUnnestOption struct {
+	f func(*unnestSettings)
+}
+
+func (fuo *funcUnnestOption) apply(uo *unnestSettings) {
+	fuo.f(uo)
+}
+
+func newFuncUnnestOption(f func(*unnestSettings)) *funcUnnestOption {
+	return &funcUnnestOption{
+		f: f,
+	}
+}
+
+// WithUnnestIndexField specifies the name of the field to store the array index of the unnested element.
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+func WithUnnestIndexField(indexField any) UnnestOption {
+	return newFuncUnnestOption(func(uo *unnestSettings) {
+		uo.IndexField = indexField
+	})
 }
 
 // Unnest produces a document for each element in an array field.
@@ -505,11 +580,17 @@ type UnnestOptions struct {
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
-func (p *Pipeline) Unnest(field Selectable, opts *UnnestOptions) *Pipeline {
+func (p *Pipeline) Unnest(field Selectable, opts ...UnnestOption) *Pipeline {
 	if p.err != nil {
 		return p
 	}
-	stage, err := newUnnestStage("Unnest", field, opts)
+	settings := &unnestSettings{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt.apply(settings)
+		}
+	}
+	stage, err := newUnnestStage("Unnest", field, settings)
 	if err != nil {
 		p.err = err
 		return p
@@ -522,7 +603,7 @@ func (p *Pipeline) Unnest(field Selectable, opts *UnnestOptions) *Pipeline {
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
-func (p *Pipeline) UnnestWithAlias(fieldpath any, alias string, opts *UnnestOptions) *Pipeline {
+func (p *Pipeline) UnnestWithAlias(fieldpath any, alias string, opts ...UnnestOption) *Pipeline {
 	if p.err != nil {
 		return p
 	}
@@ -538,7 +619,13 @@ func (p *Pipeline) UnnestWithAlias(fieldpath any, alias string, opts *UnnestOpti
 		return p
 	}
 
-	stage, err := newUnnestStage("UnnestWithAlias", fieldExpr.As(alias), opts)
+	settings := &unnestSettings{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt.apply(settings)
+		}
+	}
+	stage, err := newUnnestStage("UnnestWithAlias", fieldExpr.As(alias), settings)
 	if err != nil {
 		p.err = err
 		return p

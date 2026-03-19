@@ -79,6 +79,9 @@ func (ps *PipelineSnapshot) ExplainStats() *ExplainStats {
 		return &ExplainStats{err: errStatsBeforeEnd}
 	}
 	statsPb, statsErr := ps.iter.iter.getExplainStats()
+	if statsPb == nil && statsErr == nil {
+		return nil
+	}
 	return &ExplainStats{statsPb: statsPb, err: statsErr}
 }
 

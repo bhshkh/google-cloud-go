@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"reflect"
 	"sort"
 	"strings"
@@ -25,7 +26,10 @@ import (
 	"time"
 
 	"cloud.google.com/go/internal/testutil"
+	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/type/latlng"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestIntegration_PipelineQuery(t *testing.T) {
@@ -1643,20 +1647,21 @@ func TestIntegration_PipelineQuery(t *testing.T) {
 
 	// testUnion
 	t.Run("testUnion", func(t *testing.T) {
-		p1 := client.Pipeline().Collection(coll.ID).Where(Equal("title", "The Hitchhiker's Guide to the Galaxy"))
-		p2 := client.Pipeline().Collection(coll.ID).Where(Equal("title", "Pride and Prejudice"))
+		p1 := client.Pipeline().CreateFromQuery(coll)
+		p2 := client.Pipeline().CreateFromQuery(coll)
 		results, err := p1.Union(p2).Execute(ctx).Results().GetAll()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(results) != 2 {
-			t.Errorf("got %d results, want 2", len(results))
+		if len(results) != 22 {
+			t.Errorf("got %d results, want 22", len(results))
 		}
 	})
 
-	// testUnnest
 	t.Run("testUnnest", func(t *testing.T) {
-		results, err := client.Pipeline().Collection(coll.ID).Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).UnnestWithAlias("tags", "tag", nil).Execute(ctx).Results().GetAll()
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			UnnestWithAlias("tags", "tag").Execute(ctx).Results().GetAll()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1665,33 +1670,199 @@ func TestIntegration_PipelineQuery(t *testing.T) {
 		}
 	})
 
-	// testFindNearest
-	t.Run("testFindNearest", func(t *testing.T) {
-		v := Vector64{10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0}
-		limit := 1
-		distField := "distance"
-		res, err := client.Pipeline().Collection(coll.ID).FindNearest("embedding", v, PipelineDistanceMeasureEuclidean, &PipelineFindNearestOptions{
-			Limit:         &limit,
-			DistanceField: &distField,
-		}).Execute(ctx).Results().Next()
+	t.Run("testUnnestWithIndexField", func(t *testing.T) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			UnnestWithAlias("tags", "tag", WithUnnestIndexField("tagsIndex")).Execute(ctx).Results().GetAll()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Data()["title"] != "The Hitchhiker's Guide to the Galaxy" {
-			t.Errorf("findNearest mismatch")
+		if len(results) != 3 {
+			t.Errorf("got %d results, want 3", len(results))
+		}
+	})
+
+	t.Run("testUnnestWithExpr", func(t *testing.T) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			Unnest(Array(1, 2, 3).As("copy")).Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 3 {
+			t.Errorf("got %d results, want 3", len(results))
+		}
+	})
+
+	t.Run("testPaginationWithStartAfter", func(t *testing.T) {
+		paginationCollection := client.Collection(collectionIDs.New())
+		docs := []map[string]any{
+			{"order": 1},
+			{"order": 2},
+			{"order": 3},
+			{"order": 4},
+		}
+		for i, doc := range docs {
+			h.mustCreate(paginationCollection.Doc(fmt.Sprintf("doc%d", i+1)), doc)
+		}
+
+		p1 := client.Pipeline().CreateFromQuery(paginationCollection.OrderBy("order", Asc).Limit(2))
+		results1, err := p1.Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want1 := []map[string]any{
+			{"order": int64(1)},
+			{"order": int64(2)},
+		}
+		if len(results1) != 2 || !reflect.DeepEqual(results1[0].Data(), want1[0]) || !reflect.DeepEqual(results1[1].Data(), want1[1]) {
+			t.Errorf("first page mismatch, got: %v", results1)
+		}
+
+		lastResult := results1[len(results1)-1]
+		p2 := client.Pipeline().CreateFromQuery(paginationCollection.OrderBy("order", Asc).StartAfter(lastResult.Data()["order"]))
+		results2, err := p2.Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want2 := []map[string]any{
+			{"order": int64(3)},
+			{"order": int64(4)},
+		}
+		if len(results2) != 2 || !reflect.DeepEqual(results2[0].Data(), want2[0]) || !reflect.DeepEqual(results2[1].Data(), want2[1]) {
+			t.Errorf("second page mismatch, got: %v", results2)
+		}
+	})
+
+	t.Run("testDocumentsAsSource", func(t *testing.T) {
+		results, err := client.Pipeline().
+			Documents(coll.Doc("book1"), coll.Doc("book2"), coll.Doc("book3")).
+			Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 3 {
+			t.Errorf("got %d results, want 3", len(results))
+		}
+	})
+
+	t.Run("testCollectionGroupAsSource", func(t *testing.T) {
+		subcollectionID := uuid.New().String()
+		docs := []map[string]any{
+			{"order": 1},
+			{"order": 2},
+		}
+		coll.Doc("book1").Collection(subcollectionID).Add(ctx, docs[0])
+		coll.Doc("book2").Collection(subcollectionID).Add(ctx, docs[1])
+		results, err := client.Pipeline().
+		CollectionGroup(subcollectionID).
+		Sort(FieldOf("order").Ascending()).
+		Execute(ctx).
+		Results().
+		GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		wantResults := []map[string]any{
+			{"order": int64(1)},
+			{"order": int64(2)},
+		}
+		if !reflect.DeepEqual(results[0].Data(), wantResults[0]) ||
+			!reflect.DeepEqual(results[1].Data(), wantResults[1]) {
+			t.Errorf("[0] got- want+ %v; [1] got- want+ %v",
+				testutil.Diff(results[0].Data(), wantResults[0]),
+				testutil.Diff(results[1].Data(), wantResults[1]))
+		}
+	})
+
+	t.Run("testDatabaseAsSource", func(t *testing.T) {
+		randomID := rand.IntN(10000)
+		docs := []map[string]any{
+			{"order": 1, "randomId": randomID},
+			{"order": 2, "randomId": randomID},
+		}
+		coll.Doc("book1").Collection("sub").Add(ctx, docs[0])
+		coll.Doc("book2").Collection("sub").Add(ctx, docs[1])
+		results, err := client.Pipeline().
+			Database().
+			Where(Equal("randomId", randomID)).
+			Sort(FieldOf("order").Ascending()).
+			Execute(ctx).
+			Results().
+			GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Printf("results[0]: %v, results[1]: %v\n", results[0].Data(), results[1].Data())
+		wantResults := []map[string]any{
+			{"order": int64(1), "randomId": int64(randomID)},
+			{"order": int64(2), "randomId": int64(randomID)},
+		}
+		if !reflect.DeepEqual(results[0].Data(), wantResults[0]) ||
+			!reflect.DeepEqual(results[1].Data(), wantResults[1]) {
+			t.Errorf("[0] got- want+ %v; [1] got- want+ %v",
+				testutil.Diff(results[0].Data(), wantResults[0]),
+				testutil.Diff(results[1].Data(), wantResults[1]))
+		}
+	})
+
+	// testFindNearest
+	t.Run("testFindNearest", func(t *testing.T) {
+		v := Vector64{10.0, 1.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0}
+		res, err := client.Pipeline().Collection(coll.ID).
+			FindNearest("embedding", v,
+				PipelineDistanceMeasureEuclidean, &PipelineFindNearestOptions{
+					Limit:         Ptr(2),
+					DistanceField: Ptr("computedDistance"),
+				}).
+				Select("title", "computedDistance").
+				Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res) != 2 {
+			t.Errorf("got %d results, want 2", len(res))
+		}
+		if res[0].Data()["title"] != "The Hitchhiker's Guide to the Galaxy" {
+			t.Errorf("res[0].Data()[\"title\"] mismatch got %v", res[0].Data()["title"])
+		}
+		if res[1].Data()["title"] != "One Hundred Years of Solitude" {
+			t.Errorf("res[1].Data()[\"title\"] mismatch got %v", res[1].Data()["title"])
+		}
+		if math.Abs(res[0].Data()["computedDistance"].(float64)-1.0) > 0.00001 {
+			t.Errorf("res[0].Data()[\"computedDistance\"] mismatch got %v", res[0].Data()["computedDistance"])
+		}
+		if math.Abs(res[1].Data()["computedDistance"].(float64)-12.041594578792296) > 0.00001 {
+			t.Errorf("res[1].Data()[\"computedDistance\"] mismatch got %v", res[1].Data()["computedDistance"])
 		}
 	})
 
 	// testExplain
 	t.Run("testExplain", func(t *testing.T) {
-		snap := client.Pipeline().Collection(coll.ID).WithExecuteOptions(WithExplainMode(ExplainModeAnalyze)).Execute(ctx)
-		_, err := snap.Results().GetAll()
-		if err != nil {
-			t.Fatal(err)
+		snap := client.Pipeline().CreateFromQuery(coll).
+			Sort(FieldOf("__name__").Ascending()).
+			Execute(ctx, WithExplainMode(ExplainModeAnalyze))
+		pr, _ := snap.Results().GetAll()
+		if len(pr) == 0 {
+			t.Fatal("no results")
 		}
 		stats := snap.ExplainStats()
 		if stats == nil {
 			t.Fatal("ExplainStats is nil")
+		}
+
+
+		snap = client.Pipeline().CreateFromQuery(coll).
+			Sort(FieldOf("__name__").Ascending()).
+			Execute(ctx)
+		pr, _ = snap.Results().GetAll()
+		if len(pr) == 0 {
+			t.Fatal("no results")
+		}
+		stats = snap.ExplainStats()
+		if stats != nil {
+			t.Fatal("ExplainStats is not nil")
 		}
 	})
 
@@ -1913,6 +2084,55 @@ func TestIntegration_PipelineQuery(t *testing.T) {
 		}
 	})
 
+
+	// testOptions
+	t.Run("testOptions", func(t *testing.T) {
+		if useEmulator {
+			t.Skip("Certain options are not supported against the emulator.")
+		}
+
+		_, err := client.Pipeline().Collection(
+			"/k",
+			WithCollectionHints(CollectionHints{}.WithForceIndex("title")),
+		).FindNearest(
+			"topicVectors",
+			[]float64{1.0, 2.0, 3.0},
+			PipelineDistanceMeasureCosine,
+			&PipelineFindNearestOptions{
+				Limit:         Ptr(10),
+				DistanceField: Ptr("distance"),
+			},
+		).AggregateWithSpec(
+			NewAggregateSpec(Average("rating").As("avg_rating")).
+				WithGroups("genre").
+				WithHints(map[string]any{"test_option": "test_value"}),
+		).Execute(ctx,
+			WithIndexMode("recommended"),
+			WithExplainMode(ExplainModeAnalyze),
+		).Results().GetAll()
+
+		fmt.Println(err)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+
+		// testErrorHandling
+	t.Run("testErrorHandling", func(t *testing.T) {
+		ps := client.Pipeline().Collection(coll.ID).
+			RawStage(NewRawStage("invalidStage")).
+			Execute(ctx)
+
+		_, err := ps.Results().Next()
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("got error code %v, want %v", status.Code(err), codes.InvalidArgument)
+		}
+	})
+
 	// testType
 	t.Run("testType", func(t *testing.T) {
 		res, err := client.Pipeline().CreateFromQuery(coll).
@@ -1921,7 +2141,7 @@ func TestIntegration_PipelineQuery(t *testing.T) {
 			Select(
 				Type("title").As("string_type"),
 				Type("published").As("number_type"),
-				Type("awards.hugo").As("boolean_type"),
+				Type(FieldOf("awards").MapGet("hugo")).As("boolean_type"),
 				Type(ConstantOfNull()).As("null_type"),
 				Type("embedding").As("vector_type"),
 			).Execute(ctx).Results().Next()
@@ -1936,14 +2156,29 @@ func TestIntegration_PipelineQuery(t *testing.T) {
 
 	// testExplainWithError
 	t.Run("testExplainWithError", func(t *testing.T) {
-		t.Skip("Explain with error is not supported against the emulator, and Go SDK lacks the withExecuteOptions memory_limit API to force an error")
+		if useEmulator {
+			t.Skip("Explain with error is not supported against the emulator")
+		}
+		pipeline := client.Pipeline().Collection(coll.ID).Sort(Ascending(FieldOf("rating")))
+		snap := pipeline.Execute(ctx,
+			WithExplainMode(ExplainModeAnalyze),
+			WithRawOptions(map[string]any{"memory_limit": 1}),
+		)
+
+		_, err := snap.Results().GetAll()
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if status.Code(err) != codes.ResourceExhausted {
+			t.Errorf("got error code %v, want %v", status.Code(err), codes.ResourceExhausted)
+		}
 	})
 
 	// testUnnestWithExpr
 	t.Run("testUnnestWithExpr", func(t *testing.T) {
 		results, err := client.Pipeline().CreateFromQuery(coll).
-			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
-			Unnest(Array(int64(1), int64(2), int64(3)).As("copy"), nil).
+			Where(Equal(FieldOf("title"), "The Hitchhiker's Guide to the Galaxy")).
+			Unnest(Array(int64(1), int64(2), int64(3)).As("copy")).
 			Execute(ctx).Results().GetAll()
 		if err != nil {
 			t.Fatal(err)
@@ -1960,7 +2195,7 @@ func TestIntegration_PipelineQuery(t *testing.T) {
 
 	// testUnnestWithIndexField
 	t.Run("testUnnestWithIndexField", func(t *testing.T) {
-		opts := &UnnestOptions{IndexField: "tagsIndex"}
+		opts := WithUnnestIndexField("tagsIndex")
 		results, err := client.Pipeline().CreateFromQuery(coll).
 			Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
 			UnnestWithAlias("tags", "tag", opts).
@@ -2156,13 +2391,7 @@ func TestIntegration_PipelineQuery(t *testing.T) {
 		})
 	})
 
-	// Java missing test: testCollectionGroupAsSource - Go pipeline doesn't seem to support CollectionGroup out of the box
-	// Java missing test: testDatabaseAsSource - Go pipeline doesn't have it
-	// Java missing test: testDocumentsAsSource - Go pipeline doesn't have it
 	// Java missing test: testCrossDatabaseRejection - Go testing setup specific
-	// Java missing test: testErrorHandling - No specific tests configured
-	// Java missing test: testOptions - Equivalent not found in Go tests
-	// Java missing test: testPaginationWithStartAfter - Pipeline on Go doesn't have StartAfter
 	// Java missing test: testPipelineInTransactionsWithOptions - Go transactions lack equivalent execute options for pipelines
 	// Java missing test: testSamplePercentage - Not yet in Go SDK
 	// Java missing test: testSplitWithMismatchedTypesShouldFail - Go doesn't provide client-side errors for these yet
