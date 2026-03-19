@@ -498,7 +498,7 @@ func TestIntegration_PipelineStages(t *testing.T) {
 	})
 	t.Run("RawStage", func(t *testing.T) {
 		// Using RawStage to perform a Limit operation
-		iter := client.Pipeline().Collection(coll.ID).RawStage(NewRawStage("limit").WithArguments(3)).Execute(ctx).Results()
+		iter := client.Pipeline().Collection(coll.ID).RawStage("limit", []any{3}).Execute(ctx).Results()
 		defer iter.Stop()
 		results, err := iter.GetAll()
 		if err != nil {
@@ -509,7 +509,7 @@ func TestIntegration_PipelineStages(t *testing.T) {
 		}
 
 		// Using RawStage to perform a Select operation with options
-		iter = client.Pipeline().Collection(coll.ID).RawStage(NewRawStage("select").WithArguments(map[string]interface{}{"title": FieldOf("title")})).Limit(1).Execute(ctx).Results()
+		iter = client.Pipeline().Collection(coll.ID).RawStage("select", []any{map[string]interface{}{"title": FieldOf("title")}}).Limit(1).Execute(ctx).Results()
 		defer iter.Stop()
 		doc, err := iter.Next()
 		if err != nil {
@@ -581,7 +581,7 @@ func TestIntegration_PipelineStages(t *testing.T) {
 	})
 	t.Run("Sample", func(t *testing.T) {
 		t.Run("SampleByDocuments", func(t *testing.T) {
-			iter := client.Pipeline().Collection(coll.ID).Sample(SampleByDocuments(5)).Execute(ctx).Results()
+			iter := client.Pipeline().Collection(coll.ID).Sample(ByDocuments(5)).Execute(ctx).Results()
 			defer iter.Stop()
 			var got []map[string]interface{}
 			for {
@@ -603,7 +603,7 @@ func TestIntegration_PipelineStages(t *testing.T) {
 			}
 		})
 		t.Run("SampleByPercentage", func(t *testing.T) {
-			iter := client.Pipeline().Collection(coll.ID).Sample(&SampleSpec{Size: 0.6, Mode: SampleModePercent}).Execute(ctx).Results()
+			iter := client.Pipeline().Collection(coll.ID).Sample(ByPercentage(0.6)).Execute(ctx).Results()
 			defer iter.Stop()
 			var got []map[string]interface{}
 			for {

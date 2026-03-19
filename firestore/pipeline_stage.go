@@ -418,9 +418,9 @@ type sampleStage struct {
 	baseStage
 }
 
-func newSampleStage(spec *SampleSpec) (*sampleStage, error) {
+func newSampleStage(sampler *Sampler) (*sampleStage, error) {
 	var sizePb *pb.Value
-	switch v := spec.Size.(type) {
+	switch v := sampler.Size.(type) {
 	case int:
 		sizePb = &pb.Value{ValueType: &pb.Value_IntegerValue{IntegerValue: int64(v)}}
 	case int64:
@@ -428,9 +428,9 @@ func newSampleStage(spec *SampleSpec) (*sampleStage, error) {
 	case float64:
 		sizePb = &pb.Value{ValueType: &pb.Value_DoubleValue{DoubleValue: v}}
 	default:
-		return nil, fmt.Errorf("firestore: invalid type for sample size: %T", spec.Size)
+		return nil, fmt.Errorf("firestore: invalid type for sample size: %T", sampler.Size)
 	}
-	modePb := &pb.Value{ValueType: &pb.Value_StringValue{StringValue: string(spec.Mode)}}
+	modePb := &pb.Value{ValueType: &pb.Value_StringValue{StringValue: string(sampler.Mode)}}
 	return &sampleStage{baseStage{
 		stageName: stageNameSample,
 		stagePb: &pb.Pipeline_Stage{
@@ -580,48 +580,15 @@ func newWhereStage(condition BooleanExpression) (*whereStage, error) {
 // regardless of any other documented package stability guarantees.
 type RawStageOptions map[string]any
 
-// RawStage is a generic stage in the pipeline.
-// It provides a flexible way to extend the pipeline's functionality by adding custom
-// stages. It also allows the users to call the stages that are supported by the Firestore backend
-// but not yet available in the current SDK version.
-//
-// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
-// regardless of any other documented package stability guarantees.
-type RawStage struct {
+type rawStage struct {
 	stageName string
 	args      []any
 	options   RawStageOptions
 }
 
-// NewRawStage creates a new RawStage with the given name.
-//
-// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
-// regardless of any other documented package stability guarantees.
-func NewRawStage(name string) *RawStage {
-	return &RawStage{stageName: name}
-}
+func (s *rawStage) name() string { return s.stageName }
 
-// WithArguments sets the arguments for the RawStage.
-//
-// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
-// regardless of any other documented package stability guarantees.
-func (s *RawStage) WithArguments(args ...any) *RawStage {
-	s.args = args
-	return s
-}
-
-// WithOptions sets the options for the RawStage.
-//
-// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
-// regardless of any other documented package stability guarantees.
-func (s *RawStage) WithOptions(options RawStageOptions) *RawStage {
-	s.options = options
-	return s
-}
-
-func (s *RawStage) name() string { return s.stageName }
-
-func (s *RawStage) toProto() (*pb.Pipeline_Stage, error) {
+func (s *rawStage) toProto() (*pb.Pipeline_Stage, error) {
 	argsPb := make([]*pb.Value, len(s.args))
 	for i, arg := range s.args {
 		val, _, err := toProtoValue(reflect.ValueOf(arg))

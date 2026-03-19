@@ -1607,41 +1607,176 @@ func TestIntegration_PipelineQuery(t *testing.T) {
 
 	// testRawStage
 	t.Run("testRawStage", func(t *testing.T) {
+		// can select fields
+		// res, err := client.Pipeline().Collection(coll.ID).
+		// 	RawStage("select", []any{map[string]any{
+		// 		"title":    FieldOf("title"),
+		// 		"metadata": Map(map[string]any{"author": FieldOf("author")}),
+		// 	}}).
+		// 	Sort(FieldOf("metadata.author").Ascending()).
+		// 	Limit(1).Execute(ctx).Results().Next()
+		// if err != nil {
+		// 	t.Fatal(err)
+		// }
+
+		// metadata, ok := res.Data()["metadata"].(map[string]any)
+		// if !ok {
+		// 	t.Errorf("rawStage select mismatch metadata is not a map")
+		// }
+		// if res.Data()["title"] != "The Hitchhiker's Guide to the Galaxy" &&
+		// 	metadata["author"] != "Douglas Adams" {
+		// 	t.Errorf("rawStage select mismatch title: got: %v want: %v, metadata: got: %v want: %v", res.Data()["title"], "The Hitchhiker's Guide to the Galaxy", metadata, map[string]any{"author": "Douglas Adams"})
+		// }
+
+		// // can add fields
+		// res, err = client.Pipeline().Collection(coll.ID).
+		// 	Sort(FieldOf("author").Ascending()).
+		// 	Limit(1).
+		// 	Select("title", "author").
+		// 	RawStage("add_fields", []any{map[string]any{
+		// 		"display": StringConcat(FieldOf("title"), " - ", FieldOf("author")),
+		// 	}}).
+		// 	Execute(ctx).Results().Next()
+		// if err != nil {
+		// 	t.Fatal(err)
+		// }
+
+		
+		// if res.Data()["title"] != "The Hitchhiker's Guide to the Galaxy" &&
+		// 	res.Data()["author"] != "Douglas Adams" &&
+		// 	res.Data()["display"] != "The Hitchhiker's Guide to the Galaxy - Douglas Adams" {
+		// 	t.Errorf("rawStage select mismatch title: got: %v want: %v, author: got: %v want: %v, display: got: %v want: %v", res.Data()["title"], "The Hitchhiker's Guide to the Galaxy", res.Data()["author"], "Douglas Adams", res.Data()["display"], "The Hitchhiker's Guide to the Galaxy - Douglas Adams")
+		// }
+
+		// // can filter with where
+		// res, err = client.Pipeline().Collection(coll.ID).
+		// 	Select("title", "author").
+		// 	RawStage("where", []any{Equal(FieldOf("author"), "Douglas Adams")}).
+		// 	Execute(ctx).Results().Next()
+		// if err != nil {
+		// 	t.Fatal(err)
+		// }
+
+		// if res.Data()["title"] != "The Hitchhiker's Guide to the Galaxy" &&
+		// 	res.Data()["author"] != "Douglas Adams" {
+		// 	t.Errorf("rawStage where mismatch title: got: %v want: %v, author: got: %v want: %v", res.Data()["title"], "The Hitchhiker's Guide to the Galaxy", res.Data()["author"], "Douglas Adams")
+		// }
+
+		// // can limit, offset, and sort
+		// res, err = client.Pipeline().Collection(coll.ID).
+		// 	Select("title", "author").
+		// 	RawStage("sort", []any{map[string]any{
+		// 		"direction": "ascending",
+		// 		"expression":  FieldOf("author"),
+		// 	}}).
+		// 	RawStage("offset", []any{3}).
+		// 	RawStage("limit", []any{1}).
+		// 	Execute(ctx).Results().Next()
+		// if err != nil {
+		// 	t.Fatal(err)
+		// }
+
+		// if res.Data()["title"] != "Crime and Punishment" &&
+		// 	res.Data()["author"] != "Fyodor Dostoevsky" {
+		// 	t.Errorf("rawStage sort, offset, limit mismatch title: got: %v want: %v, author: got: %v want: %v", res.Data()["title"], "Crime and Punishment", res.Data()["author"], "Fyodor Dostoevsky")
+		// }
+
+		// can perform aggregate query
 		res, err := client.Pipeline().Collection(coll.ID).
-			RawStage(NewRawStage("select").WithArguments(map[string]any{
-				"title":    FieldOf("title"),
-				"metadata": Map(map[string]any{"author": FieldOf("author")}),
-			})).
-			Sort(FieldOf("metadata.author").Ascending()).
-			Limit(1).Execute(ctx).Results().Next()
+			Select("title", "author", "rating").
+			RawStage("aggregate", []any{map[string]any{
+				"averageRating": Average("rating"),
+			}, map[string]any{}}).
+			Execute(ctx).Results().Next()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Data()["title"] != "The Hitchhiker's Guide to the Galaxy" {
-			t.Errorf("rawStage select mismatch")
+
+		if math.Abs(res.Data()["averageRating"].(float64)-4.31) > 0.00001 {
+			t.Errorf("rawStage aggregate mismatch averageRating: got: %v want: %v", res.Data()["averageRating"], 4.31)
 		}
+
+		// can perform distinct query
+		// res, err = client.Pipeline().Collection(coll.ID).
+		// 	Select("title", "author").
+		// 	RawStage("distinct", []any{map[string]any{
+		// 		"fields": []any{"title", "author"},
+		// 	}}).
+		// 	Execute(ctx).Results().Next()
+		// if err != nil {
+		// 	t.Fatal(err)
+		// }
+
+		// if res.Data()["title"] != "The Hitchhiker's Guide to the Galaxy" &&
+		// 	res.Data()["author"] != "Douglas Adams" {
+		// 	t.Errorf("rawStage distinct mismatch title: got: %v want: %v, author: got: %v want: %v", res.Data()["title"], "The Hitchhiker's Guide to the Galaxy", res.Data()["author"], "Douglas Adams")
+		// }
+
+		// // can perform FindNearest query
+		// res, err = client.Pipeline().Collection(coll.ID).
+		// 	RawStage("find_nearest", []any{field("embedding"), constant(vector([]float64{10.0, 1.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0})), "euclidean"}).
+		// 	WithOptions(map[string]any{"distance_field": field("computedDistance")}).
+		// 	Execute(ctx).Results().Next()
+		// if err != nil {
+		// 	t.Fatal(err)
+		// }
+
+		// if math.Abs(res.Data()["computedDistance"].(float64)-10.0) > 0.00001 {
+		// 	t.Errorf("rawStage findNearest mismatch computedDistance: got: %v want: %v", res.Data()["computedDistance"], 10.0)
+		// }
+
 	})
 
 	// testReplaceWith
 	t.Run("testReplaceWith", func(t *testing.T) {
-		res, err := client.Pipeline().Collection(coll.ID).Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).ReplaceWith("awards").Execute(ctx).Results().Next()
+		res, err := client.Pipeline().CreateFromQuery(coll).Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).ReplaceWith("awards").Execute(ctx).Results().Next()
 		if err != nil {
 			t.Fatal(err)
 		}
 		data := res.Data()
 		if data["hugo"] != true || data["nebula"] != false {
-			t.Errorf("replaceWith mismatch")
+			t.Errorf("replaceWith mismatch data[hugo] got: %v want: %v, data[nebula] got: %v want: %v", data["hugo"], true, data["nebula"], false)
+		}
+
+		res, err = client.Pipeline().CreateFromQuery(coll).Where(Equal("title", "The Hitchhiker's Guide to the Galaxy")).
+			ReplaceWith(
+				Map(map[string]any{
+					"foo": "bar",
+					"baz": Map(map[string]any{"title": FieldOf("title")}),
+				})).Execute(ctx).Results().Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = res.Data()
+		bazVal, ok := data["baz"].(map[string]any)
+		if !ok {
+			t.Errorf("replaceWith mismatch data[baz] got: %v want: %v", data["baz"], map[string]any{"title": "The Hitchhiker's Guide to the Galaxy"})
+		}
+		if data["foo"] != "bar" || bazVal["title"] != "The Hitchhiker's Guide to the Galaxy" {
+			t.Errorf("replaceWith mismatch data[foo] got: %v want: %v, data[baz][title] got: %v want: %v", data["foo"], "bar", bazVal["title"], "The Hitchhiker's Guide to the Galaxy")
 		}
 	})
 
 	// testSampleLimit
-	t.Run("testSampleLimit", func(t *testing.T) {
-		results, err := client.Pipeline().Collection(coll.ID).Sample(SampleByDocuments(2)).Execute(ctx).Results().GetAll()
+	t.Run("sample", func(t *testing.T) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+		Sample(ByDocuments(2)).Execute(ctx).Results().GetAll()
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(results) != 2 {
 			t.Errorf("got %d results, want 2", len(results))
+		}
+	})
+
+	t.Run("testSamplePercentage", func(t *testing.T) {
+		results, err := client.Pipeline().CreateFromQuery(coll).
+		Sample(ByPercentage(0.6)).Execute(ctx).Results().GetAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) == 0 {
+			t.Errorf("got %d results, want >0", len(results))
 		}
 	})
 
@@ -2121,7 +2256,7 @@ func TestIntegration_PipelineQuery(t *testing.T) {
 		// testErrorHandling
 	t.Run("testErrorHandling", func(t *testing.T) {
 		ps := client.Pipeline().Collection(coll.ID).
-			RawStage(NewRawStage("invalidStage")).
+			RawStage("invalidStage", nil).
 			Execute(ctx)
 
 		_, err := ps.Results().Next()
@@ -2393,6 +2528,5 @@ func TestIntegration_PipelineQuery(t *testing.T) {
 
 	// Java missing test: testCrossDatabaseRejection - Go testing setup specific
 	// Java missing test: testPipelineInTransactionsWithOptions - Go transactions lack equivalent execute options for pipelines
-	// Java missing test: testSamplePercentage - Not yet in Go SDK
 	// Java missing test: testSplitWithMismatchedTypesShouldFail - Go doesn't provide client-side errors for these yet
 }

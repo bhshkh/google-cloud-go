@@ -347,7 +347,7 @@ func TestReplaceStage(t *testing.T) {
 }
 
 func TestSampleStage(t *testing.T) {
-	spec := SampleByDocuments(100)
+	spec := ByDocuments(100)
 	stage, err := newSampleStage(spec)
 	if err != nil {
 		t.Fatalf("newSampleStage() failed: %v", err)
