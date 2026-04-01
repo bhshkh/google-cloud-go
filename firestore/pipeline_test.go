@@ -154,7 +154,7 @@ func TestPipeline_ToExecutePipelineRequest(t *testing.T) {
 func TestPipeline_Sort(t *testing.T) {
 	client := newTestClient()
 	ps := &PipelineSource{client: client}
-	p := ps.Collection("users").Sort(Ordering{Expr: FieldOf("age"), Direction: OrderingDesc})
+	p := ps.Collection("users").Sort(Orders(Ordering{Expr: FieldOf("age"), Direction: OrderingDesc}))
 
 	req, err := p.toExecutePipelineRequest()
 	if err != nil {
@@ -213,7 +213,7 @@ func TestPipeline_Offset(t *testing.T) {
 func TestPipeline_Select(t *testing.T) {
 	client := newTestClient()
 	ps := &PipelineSource{client: client}
-	p := ps.Collection("users").Select("name", FieldOf("age"), Add(FieldOf("score"), 10).As("new_score"))
+	p := ps.Collection("users").Select(Fields("name", FieldOf("age"), Add(FieldOf("score"), 10).As("new_score")))
 
 	req, err := p.toExecutePipelineRequest()
 	if err != nil {
@@ -253,7 +253,7 @@ func TestPipeline_Select(t *testing.T) {
 func TestPipeline_AddFields(t *testing.T) {
 	client := newTestClient()
 	ps := &PipelineSource{client: client}
-	p := ps.Collection("users").AddFields(Add(FieldOf("score"), 10).As("new_score"))
+	p := ps.Collection("users").AddFields(Selectables(Add(FieldOf("score"), 10).As("new_score")))
 
 	req, err := p.toExecutePipelineRequest()
 	if err != nil {
@@ -323,7 +323,7 @@ func TestPipeline_Where(t *testing.T) {
 func TestPipeline_Aggregate(t *testing.T) {
 	client := newTestClient()
 	ps := &PipelineSource{client: client}
-	p := ps.Collection("users").Aggregate(Sum("age").As("total_age"))
+	p := ps.Collection("users").Aggregate(Accumulators(Sum("age").As("total_age")))
 
 	req, err := p.toExecutePipelineRequest()
 	if err != nil {
@@ -358,11 +358,10 @@ func TestPipeline_Aggregate(t *testing.T) {
 	}
 }
 
-func TestPipeline_AggregateWithSpec(t *testing.T) {
+func TestPipeline_AggregateWith(t *testing.T) {
 	client := newTestClient()
 	ps := &PipelineSource{client: client}
-	spec := NewAggregateSpec(Average("rating").As("avg_rating")).WithGroups("genre")
-	p := ps.Collection("books").AggregateWithSpec(spec)
+	p := ps.Collection("books").Aggregate(Accumulators(Average("rating").As("avg_rating")), WithAggregateGroups("genre"))
 
 	req, err := p.toExecutePipelineRequest()
 	if err != nil {
@@ -421,9 +420,9 @@ func TestPipeline_CreateFromQuery(t *testing.T) {
 	}
 
 	stages := req.GetStructuredPipeline().GetPipeline().GetStages()
-	// Should have 2 stages: collection and sort
+	// Should have 2 stages: collection and sort by __name__
 	if len(stages) != 2 {
-		t.Fatalf("Expected 2 stages in proto, got %v", stages)
+		t.Fatalf("Expected 2 stages in proto, got %d: %v", len(stages), stages)
 	}
 
 	wantCollStage := &pb.Pipeline_Stage{
@@ -432,5 +431,16 @@ func TestPipeline_CreateFromQuery(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantCollStage, stages[0], protocmp.Transform()); diff != "" {
 		t.Errorf("toExecutePipelineRequest() mismatch for collection stage (-want +got):\n%s", diff)
+	}
+
+	wantSortStage := &pb.Pipeline_Stage{
+		Name: "sort",
+		Args: []*pb.Value{{ValueType: &pb.Value_MapValue{MapValue: &pb.MapValue{Fields: map[string]*pb.Value{
+			"direction":  {ValueType: &pb.Value_StringValue{StringValue: "ascending"}},
+			"expression": {ValueType: &pb.Value_FieldReferenceValue{FieldReferenceValue: "__name__"}},
+		}}}}},
+	}
+	if diff := cmp.Diff(wantSortStage, stages[1], protocmp.Transform()); diff != "" {
+		t.Errorf("toExecutePipelineRequest() mismatch for sort stage (-want +got):\n%s", diff)
 	}
 }
