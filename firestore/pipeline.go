@@ -608,8 +608,7 @@ func (p *Pipeline) AddFields(fields []Selectable, opts ...AddFieldsOption) *Pipe
 	return p.append(stage)
 }
 
-// RemoveFields removes fields from outputs from previous stages.
-// field can be a string or a [FieldPath] or an expression obtained by calling [FieldOf].
+// RemoveFieldsOption is an option for an RemoveFields pipeline stage.
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
