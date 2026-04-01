@@ -306,10 +306,10 @@ func (s *distinctStage) toProto() (*pb.Pipeline_Stage, error) {
 }
 
 type findNearestStage struct {
-	vectorField  any
-	queryVector  any
-	measure      PipelineDistanceMeasure
-	options      map[string]any
+	vectorField any
+	queryVector any
+	measure     PipelineDistanceMeasure
+	options     map[string]any
 }
 
 func newFindNearestStage(vectorField any, queryVector any, measure PipelineDistanceMeasure, options map[string]any) (*findNearestStage, error) {
@@ -364,6 +364,9 @@ func (s *findNearestStage) toProto() (*pb.Pipeline_Stage, error) {
 
 	// Correctly encode distance_field as FieldReferenceValue if it's a string
 	if df, ok := optsCopy["distance_field"].(string); ok {
+		if optionsPb == nil {
+			optionsPb = make(map[string]*pb.Value)
+		}
 		optionsPb["distance_field"] = &pb.Value{ValueType: &pb.Value_FieldReferenceValue{FieldReferenceValue: df}}
 	}
 
@@ -653,8 +656,9 @@ func (s *unnestStage) toProto() (*pb.Pipeline_Stage, error) {
 		optsCopy[k] = v
 	}
 
-	// Correctly encode index_field as FieldReferenceValue if it's a string or FieldPath
+	var indexPb *pb.Value
 	if idx, ok := optsCopy["index_field"]; ok {
+		delete(optsCopy, "index_field")
 		var indexFieldExpr Expression
 		switch v := idx.(type) {
 		case FieldPath:
@@ -664,17 +668,26 @@ func (s *unnestStage) toProto() (*pb.Pipeline_Stage, error) {
 		default:
 			return nil, errInvalidArg(s.callerName, idx, "string", "FieldPath")
 		}
-		indexPb, err := indexFieldExpr.toProto()
-		if err != nil {
-			return nil, err
+		if indexFieldExpr != nil {
+			var err error
+			indexPb, err = indexFieldExpr.toProto()
+			if err != nil {
+				return nil, err
+			}
 		}
-		optsCopy["index_field"] = indexPb
 	}
 
 	optionsPb, err := stageOptionsToProto(optsCopy)
 	if err != nil {
 		return nil, err
 	}
+	if indexPb != nil {
+		if optionsPb == nil {
+			optionsPb = make(map[string]*pb.Value)
+		}
+		optionsPb["index_field"] = indexPb
+	}
+
 	return &pb.Pipeline_Stage{
 		Name:    s.name(),
 		Args:    []*pb.Value{exprPb, aliasPb},

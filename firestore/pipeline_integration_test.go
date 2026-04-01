@@ -642,7 +642,6 @@ func TestIntegration_PipelineStages(t *testing.T) {
 		})
 	})
 	t.Run("Select", func(t *testing.T) {
-		t.Skip("Skipping functional test failure")
 		iter := client.Pipeline().Collection(coll.ID).Select(Fields("title", "author.name")).Limit(1).Execute(ctx).Results()
 		defer iter.Stop()
 		doc, err := iter.Next()
@@ -656,12 +655,16 @@ func TestIntegration_PipelineStages(t *testing.T) {
 		if _, ok := data["title"]; !ok {
 			t.Error("missing 'title' field")
 		}
-		if _, ok := data["author.name"]; !ok {
-			t.Error("missing 'author.name' field")
+
+		authorRaw, ok := data["author"]
+		if !ok {
+			t.Error("missing 'author' map from backend reconstructed field path")
+		} else if authorMap, ok := authorRaw.(map[string]interface{}); !ok {
+			t.Errorf("'author' is not a map, got %T", authorRaw)
+		} else if _, ok := authorMap["name"]; !ok {
+			t.Error("missing nested 'name' field inside author map")
 		}
-		if _, ok := data["author"]; ok {
-			t.Error("unexpected 'author' field")
-		}
+
 		if _, ok := data["genre"]; ok {
 			t.Error("unexpected 'genre' field")
 		}
@@ -808,8 +811,6 @@ func TestIntegration_PipelineStages(t *testing.T) {
 		}
 	})
 	t.Run("UnnestWithIndexField", func(t *testing.T) {
-		t.Skip("Skipping functional test failure")
-		t.Skip("Skipping functional test failure")
 		iter := client.Pipeline().Collection(coll.ID).
 			Where(Equal(FieldOf("title"), "The Hitchhiker's Guide to the Galaxy")).
 			UnnestWithAlias("tags", "tag", WithUnnestIndexField("tagIndex")).
@@ -1155,7 +1156,6 @@ func TestIntegration_Query_Pipeline(t *testing.T) {
 	})
 
 	t.Run("Select", func(t *testing.T) {
-		t.Skip("Skipping functional test failure")
 		q := coll.Select("title")
 		p := q.Pipeline()
 		iter := p.Execute(ctx).Results()
@@ -1300,21 +1300,21 @@ func objectFuncs(t *testing.T) {
 			pipeline: client.Pipeline().Collection(coll.ID).Select(Fields(MapSet("m1", "c", 3).As("updated"))),
 			want:     map[string]interface{}{"updated": map[string]interface{}{"a": int64(1), "b": int64(2), "c": int64(3)}},
 		},
-		// {
-		// 	name:     "MapKeys",
-		// 	pipeline: client.Pipeline().Collection(coll.ID).Select(Fields(MapKeys("m1").As("keys"))),
-		// 	want:     map[string]interface{}{"keys": []interface{}{"a", "b"}},
-		// },
-		// {
-		// 	name:     "MapValues",
-		// 	pipeline: client.Pipeline().Collection(coll.ID).Select(Fields(MapValues("m1").As("values"))),
-		// 	want:     map[string]interface{}{"values": []interface{}{int64(1), int64(2)}},
-		// },
-		// {
-		// 	name:     "MapEntries",
-		// 	pipeline: client.Pipeline().Collection(coll.ID).Select(Fields(MapEntries("m1").As("entries"))),
-		// 	want:     map[string]interface{}{"entries": []interface{}{map[string]interface{}{"k": "a", "v": int64(1)}, map[string]interface{}{"k": "b", "v": int64(2)}}},
-		// },
+		{
+			name:     "MapKeys",
+			pipeline: client.Pipeline().Collection(coll.ID).Select(Fields(MapKeys("m1").As("keys"))),
+			want:     map[string]interface{}{"keys": []interface{}{"a", "b"}},
+		},
+		{
+			name:     "MapValues",
+			pipeline: client.Pipeline().Collection(coll.ID).Select(Fields(MapValues("m1").As("values"))),
+			want:     map[string]interface{}{"values": []interface{}{int64(1), int64(2)}},
+		},
+		{
+			name:     "MapEntries",
+			pipeline: client.Pipeline().Collection(coll.ID).Select(Fields(MapEntries("m1").As("entries"))),
+			want:     map[string]interface{}{"entries": []interface{}{map[string]interface{}{"k": "a", "v": int64(1)}, map[string]interface{}{"k": "b", "v": int64(2)}}},
+		},
 	}
 
 	for _, test := range tests {
@@ -1445,6 +1445,7 @@ func arrayFuncs(t *testing.T) {
 			pipeline: client.Pipeline().Collection(coll.ID).Select(Fields(ArraySliceLength("a", 1, 1).As("slice_len"))),
 			want:     map[string]interface{}{"slice_len": []interface{}{int64(2)}},
 		},
+		// TODO: Uncomment this after fixing the proto representation of this function.
 		// {
 		// 	name:     "ArrayFilter",
 		// 	pipeline: client.Pipeline().Collection(coll.ID).Select(Fields(ArrayFilter("a", "x", GreaterThan(FieldOf("x"), int64(1))).As("filter"))),

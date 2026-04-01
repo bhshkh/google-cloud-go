@@ -270,9 +270,7 @@ func TestDistinctStage(t *testing.T) {
 }
 
 func TestFindNearestStage(t *testing.T) {
-	limit := 10
-	distanceField := "distance"
-	stage, err := newFindNearestStage("embedding", []float64{1, 2, 3}, PipelineDistanceMeasureEuclidean, map[string]any{"limit": &limit, "distance_field": &distanceField})
+	stage, err := newFindNearestStage("embedding", []float64{1, 2, 3}, PipelineDistanceMeasureEuclidean, map[string]any{"limit": 10, "distance_field": "distance"})
 	if err != nil {
 		t.Fatalf("newFindNearestStage() failed: %v", err)
 	}
