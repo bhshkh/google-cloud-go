@@ -481,24 +481,8 @@ func TestPipelineResultIterator_ExplainStats(t *testing.T) {
 		ps := &PipelineSnapshot{&PipelineResultIterator{iter: mockIter, err: iterator.Done}}
 
 		stats := ps.ExplainStats()
-		if stats.err != nil {
-			t.Fatalf("ExplainStats() error: %v", stats.err)
-		}
-
-		text, err := stats.Text()
-		if err != nil {
-			t.Fatalf("GetText() error: %v", err)
-		}
-		if text != "" {
-			t.Errorf("GetText(): got %q, want empty string", text)
-		}
-
-		rawData, err := stats.RawData()
-		if err != nil {
-			t.Fatalf("GetRawData() error: %v", err)
-		}
-		if rawData != nil {
-			t.Errorf("GetRawData(): got %v, want nil", rawData)
+		if stats != nil {
+			t.Fatalf("ExplainStats(): got %v, want nil", stats)
 		}
 	})
 }
