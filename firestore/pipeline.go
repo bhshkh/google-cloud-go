@@ -896,12 +896,6 @@ type DeleteOption interface {
 	isDeleteOption()
 }
 
-type funcDeleteOption struct {
-	f func(map[string]any)
-}
-
-func (*funcDeleteOption) isDeleteOption() {}
-
 // Delete deletes the documents from previous stages.
 //
 // Example:
