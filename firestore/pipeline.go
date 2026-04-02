@@ -838,7 +838,6 @@ type updateTransformationsOption struct {
 func (updateTransformationsOption) isUpdateOption() {}
 
 // WithUpdateTransformations specifies the list of field transformations to apply in an update operation.
-// Use [Selectables] to provide variadic-like ergonomics for the fields argument.
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
