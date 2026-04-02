@@ -862,7 +862,7 @@ func WithUpdateTransformations(field Selectable, additionalFields ...Selectable)
 //	// Update with transformations
 //	client.Pipeline().Collection("books").
 //		Where(GreaterThan("price", 50)).
-//		Update(WithUpdateTransformations(Selectables(ConstantOf("Discounted").As("status"))))
+//		Update(WithUpdateTransformations(ConstantOf("Discounted").As("status")))
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
