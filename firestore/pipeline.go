@@ -589,7 +589,7 @@ type AddFieldsOption interface {
 // stages or constants. You can use this to create new fields or overwrite existing ones (if there
 // is name overlaps).
 //
-// The added fields are defined using [Selectable]s.
+// The added fields are defined using [Selectable]'s.
 // Use [Selectables] to provide variadic-like ergonomics for the fields argument.
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
