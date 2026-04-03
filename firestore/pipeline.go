@@ -182,6 +182,8 @@ func (RawOptions) isDocumentsOption() {}
 
 func (RawOptions) isLiteralsOption() {}
 
+func (RawOptions) isDefineOption() {}
+
 func (r RawOptions) apply(eo *executeSettings) {
 	if eo.RawOptions == nil {
 		eo.RawOptions = make(map[string]any)
@@ -225,6 +227,15 @@ func Accumulators(a ...*AliasedAggregate) []*AliasedAggregate {
 // regardless of any other documented package stability guarantees.
 func Selectables(s ...Selectable) []Selectable {
 	return []Selectable(s)
+}
+
+// AliasedExpressions is a helper function that returns its arguments as a slice of *AliasedExpression.
+// It is used to provide variadic-like ergonomics for the [Pipeline.Define] pipeline stage.
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+func AliasedExpressions(v ...*AliasedExpression) []*AliasedExpression {
+	return v
 }
 
 // Execute executes the pipeline and returns a snapshot of the results.
@@ -1240,5 +1251,110 @@ func (p *Pipeline) Delete(opts ...DeleteOption) *Pipeline {
 		}
 	}
 	stage := newDeleteStage(options)
+	return p.append(stage)
+}
+
+// Scalar converts this Pipeline into an expression that evaluates to a single scalar result.
+// Used for 1:1 lookups or Aggregations when the subquery is expected to return a single value or object.
+//
+// Example:
+//
+//	// Calculate average rating for each restaurant using a subquery
+//	client.Pipeline().Collection("restaurants").
+//		AddFields(Selectables(
+//			client.Pipeline().Subcollection("reviews").
+//				Aggregate(Accumulators(Average("rating").As("avg_score"))).
+//				Scalar().As("stats"),
+//		))
+//	// Output format:
+//	// [
+//	//   {
+//	//     "name": "The Burger Joint",
+//	//     "stats": {
+//	//       "avg_score": 4.8,
+//	//       "review_count": 120
+//	//     }
+//	//   }
+//	// ]
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+func (p *Pipeline) ToScalarExpression() Expression {
+	return newBaseFunction("scalar", []Expression{newPipelineValueExpression(p)})
+}
+
+// Array converts this Pipeline into an expression that evaluates to an array result.
+//
+// Example:
+//
+//	// Embed a subcollection of reviews as an array into each restaurant document
+//	client.Pipeline().Collection("restaurants").
+//		AddFields(Selectables(
+//			client.Pipeline().Subcollection("reviews").
+//				Select(Fields("reviewer", "rating")).
+//				Array().As("reviews"),
+//		))
+//	// Output format:
+//	// [
+//	//   {
+//	//     "name": "The Burger Joint",
+//	//     "reviews": [
+//	//       { "reviewer": "Alice", "rating": 5 },
+//	//       { "reviewer": "Bob", "rating": 4 }
+//	//     ]
+//	//   }
+//	// ]
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+func (p *Pipeline) ToArrayExpression() Expression {
+	return newBaseFunction("array", []Expression{newPipelineValueExpression(p)})
+}
+
+// DefineOption is an option for a Define pipeline stage.
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+type DefineOption interface {
+	StageOption
+	isDefineOption()
+}
+
+// Define adds a "let" stage to the pipeline to define variables.
+//
+// Defines one or more variables in the pipeline's scope. `Define` is used to bind a value to a
+// name, which can be referenced in subsequent stages using [Variable].
+//
+// Each variable is defined using an [AliasedExpression], which pairs an expression with
+// its alias (the variable name).
+//
+// Example:
+//
+//	// Define a variable and use it in a filter
+//	client.Pipeline().Collection("products").
+//		Define(AliasedExpressions(
+//			Multiply("price", 0.9).As("discountedPrice"),
+//			Add("stock", 10).As("newStock"),
+//		)).
+//		Where(LessThan(Variable("discountedPrice"), 100)).
+//		Select(Fields("name", Variable("newStock")))
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+func (p *Pipeline) Define(variables []*AliasedExpression, opts ...DefineOption) *Pipeline {
+	if p.err != nil {
+		return p
+	}
+	options := make(map[string]any)
+	for _, opt := range opts {
+		if opt != nil {
+			opt.applyStage(options)
+		}
+	}
+	stage, err := newDefineStage(variables, options)
+	if err != nil {
+		p.err = err
+		return p
+	}
 	return p.append(stage)
 }
