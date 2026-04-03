@@ -726,7 +726,7 @@ func WithAggregateGroups(groups ...any) AggregateOption {
 // Aggregate performs aggregation operations on the documents from previous stages.
 // This stage allows you to calculate aggregate values over a set of documents. You define the
 // aggregations to perform using [AliasedAggregate] expressions which are typically results of
-// calling [AggregateFunction.As] on [AggregateFunction] instances.
+// calling AggregateFunction.As on [AggregateFunction] instances.
 // Use [Accumulators] to provide variadic-like ergonomics for the accumulators argument.
 //
 // Example:
