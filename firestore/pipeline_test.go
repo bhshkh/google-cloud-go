@@ -526,3 +526,147 @@ func TestPipeline_Delete(t *testing.T) {
 		t.Errorf("toExecutePipelineRequest() mismatch for delete stage (-want +got):\n%s", diff)
 	}
 }
+
+func TestPipeline_Update_RawOptions(t *testing.T) {
+	client := newTestClient()
+	ps := &PipelineSource{client: client}
+	p := ps.Collection("users").Update(RawOptions{"foo": "bar"})
+
+	req, err := p.toExecutePipelineRequest()
+	if err != nil {
+		t.Fatalf("p.toExecutePipelineRequest() failed: %v", err)
+	}
+
+	stages := req.GetStructuredPipeline().GetPipeline().GetStages()
+	if len(stages) != 2 {
+		t.Fatalf("Expected 2 stages in proto, got %d", len(stages))
+	}
+
+	wantUpdateStage := &pb.Pipeline_Stage{
+		Name: "update",
+		Args: []*pb.Value{
+			{ValueType: &pb.Value_MapValue{MapValue: &pb.MapValue{}}},
+		},
+		Options: map[string]*pb.Value{
+			"foo": {ValueType: &pb.Value_StringValue{StringValue: "bar"}},
+		},
+	}
+	if diff := cmp.Diff(wantUpdateStage, stages[1], protocmp.Transform()); diff != "" {
+		t.Errorf("toExecutePipelineRequest() mismatch for update stage with RawOptions (-want +got):\n%s", diff)
+	}
+}
+
+func TestPipeline_Delete_RawOptions(t *testing.T) {
+	client := newTestClient()
+	ps := &PipelineSource{client: client}
+	p := ps.Collection("users").Delete(RawOptions{"foo": "bar"})
+
+	req, err := p.toExecutePipelineRequest()
+	if err != nil {
+		t.Fatalf("p.toExecutePipelineRequest() failed: %v", err)
+	}
+
+	stages := req.GetStructuredPipeline().GetPipeline().GetStages()
+	if len(stages) != 2 {
+		t.Fatalf("Expected 2 stages in proto, got %d", len(stages))
+	}
+
+	wantDeleteStage := &pb.Pipeline_Stage{
+		Name: "delete",
+		Args: []*pb.Value{},
+		Options: map[string]*pb.Value{
+			"foo": {ValueType: &pb.Value_StringValue{StringValue: "bar"}},
+		},
+	}
+	if diff := cmp.Diff(wantDeleteStage, stages[1], protocmp.Transform()); diff != "" {
+		t.Errorf("toExecutePipelineRequest() mismatch for delete stage with RawOptions (-want +got):\n%s", diff)
+	}
+}
+
+// TestPipelineOptions_UniqueKeys verifies that strongly-typed options within the
+// same stage scope write to strictly unique keys, preventing accidental overrides.
+func TestPipelineOptions_UniqueKeys(t *testing.T) {
+	// 1. Collection & CollectionGroup Options
+	t.Run("CollectionSourceOptions", func(t *testing.T) {
+		options := []CollectionSourceOption{
+			WithForceIndex("idx1"),
+			WithIgnoreIndexFields("field1", "field2"),
+		}
+
+		keys := make(map[string]bool)
+		for _, opt := range options {
+			m := make(map[string]any)
+			opt.applyStage(m)
+
+			for k := range m {
+				if keys[k] {
+					t.Errorf("Duplicate key found in CollectionSourceOptions: %q", k)
+				}
+				keys[k] = true
+			}
+		}
+	})
+
+	// 2. FindNearest Options
+	t.Run("FindNearestOptions", func(t *testing.T) {
+		options := []FindNearestOption{
+			WithFindNearestLimit(10),
+			WithFindNearestDistanceField("dist"),
+		}
+
+		keys := make(map[string]bool)
+		for _, opt := range options {
+			m := make(map[string]any)
+			opt.applyStage(m)
+
+			for k := range m {
+				if keys[k] {
+					t.Errorf("Duplicate key found in FindNearestOptions: %q", k)
+				}
+				keys[k] = true
+			}
+		}
+	})
+
+	// 3. Unnest Options
+	t.Run("UnnestOptions", func(t *testing.T) {
+		options := []UnnestOption{
+			WithUnnestIndexField("idx"),
+		}
+
+		keys := make(map[string]bool)
+		for _, opt := range options {
+			m := make(map[string]any)
+			opt.applyStage(m)
+
+			for k := range m {
+				if keys[k] {
+					t.Errorf("Duplicate key found in UnnestOptions: %q", k)
+				}
+				keys[k] = true
+			}
+		}
+	})
+
+	// 4. Aggregate Options
+	t.Run("AggregateOptions", func(t *testing.T) {
+		options := []AggregateOption{
+			WithAggregateGroups("group1", "group2"),
+		}
+
+		keys := make(map[string]bool)
+		for _, opt := range options {
+			m := make(map[string]any)
+			// Aggregate has applyStage and applyAggregate; both write to the same map.
+			opt.applyStage(m)
+			opt.applyAggregate(m)
+
+			for k := range m {
+				if keys[k] {
+					t.Errorf("Duplicate key found in AggregateOptions: %q", k)
+				}
+				keys[k] = true
+			}
+		}
+	})
+}

@@ -168,6 +168,10 @@ func (RawOptions) isReplaceWithOption() {}
 
 func (RawOptions) isFindNearestOption() {}
 
+func (RawOptions) isUpdateOption() {}
+
+func (RawOptions) isDeleteOption() {}
+
 func (RawOptions) isCollectionOption() {}
 
 func (RawOptions) isCollectionGroupOption() {}
@@ -1134,30 +1138,45 @@ func (p *Pipeline) RawStage(name string, args []any, opts ...StageOption) *Pipel
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
 type UpdateOption interface {
+	StageOption
 	isUpdateOption()
 }
 
-type updateTransformationsOption struct {
-	fields []Selectable
+type funcUpdateOption struct {
+	f func(map[string]any)
 }
 
-func (updateTransformationsOption) isUpdateOption() {}
+func (fuo *funcUpdateOption) applyStage(uo map[string]any) {
+	fuo.f(uo)
+}
+
+func (*funcUpdateOption) isUpdateOption() {}
+
+func newFuncUpdateOption(f func(map[string]any)) *funcUpdateOption {
+	return &funcUpdateOption{
+		f: f,
+	}
+}
 
 // WithUpdateTransformations specifies the list of field transformations to apply in an update operation.
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
 func WithUpdateTransformations(field Selectable, additionalFields ...Selectable) UpdateOption {
-	return updateTransformationsOption{
-		fields: append([]Selectable{field}, additionalFields...),
-	}
+	return newFuncUpdateOption(func(uo map[string]any) {
+		t, ok := uo["transformations"].([]Selectable)
+		if !ok {
+			t = []Selectable{}
+		}
+		uo["transformations"] = append(t, append([]Selectable{field}, additionalFields...)...)
+	})
 }
 
 // Update performs an update operation using documents from previous stages.
 //
-// This method updates the documents in place based on the data flowing through the pipeline.
+// This method updates the documents in the database based on the data flowing through the pipeline.
 // You can optionally specify a list of [Selectable] field transformations using [WithUpdateTransformations].
-// If no transformations are provided, it performs the update in-place without any changes.
+// If no transformations are provided, the entire document flowing from the previous stage is used as the update payload.
 //
 // Example:
 //
@@ -1176,17 +1195,14 @@ func (p *Pipeline) Update(opts ...UpdateOption) *Pipeline {
 		return p
 	}
 
-	var transformations []Selectable
+	options := make(map[string]any)
 	for _, opt := range opts {
 		if opt != nil {
-			switch o := opt.(type) {
-			case updateTransformationsOption:
-				transformations = append(transformations, o.fields...)
-			}
+			opt.applyStage(options)
 		}
 	}
 
-	stage, err := newUpdateStage(transformations)
+	stage, err := newUpdateStage(options)
 	if err != nil {
 		p.err = err
 		return p
@@ -1199,6 +1215,7 @@ func (p *Pipeline) Update(opts ...UpdateOption) *Pipeline {
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
 type DeleteOption interface {
+	StageOption
 	isDeleteOption()
 }
 
@@ -1216,6 +1233,12 @@ func (p *Pipeline) Delete(opts ...DeleteOption) *Pipeline {
 	if p.err != nil {
 		return p
 	}
-	stage := newDeleteStage()
+	options := make(map[string]any)
+	for _, opt := range opts {
+		if opt != nil {
+			opt.applyStage(options)
+		}
+	}
+	stage := newDeleteStage(options)
 	return p.append(stage)
 }

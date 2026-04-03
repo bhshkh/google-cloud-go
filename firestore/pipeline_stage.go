@@ -753,20 +753,32 @@ func (s *rawStage) toProto() (*pb.Pipeline_Stage, error) {
 }
 
 type updateStage struct {
-	fields []Selectable
+	options map[string]any
 }
 
-func newUpdateStage(fields []Selectable) (*updateStage, error) {
-	return &updateStage{fields: fields}, nil
+func newUpdateStage(options map[string]any) (*updateStage, error) {
+	return &updateStage{options: options}, nil
 }
 
 func (s *updateStage) name() string { return stageNameUpdate }
 
 func (s *updateStage) toProto() (*pb.Pipeline_Stage, error) {
 	var mapVal *pb.Value
-	if len(s.fields) > 0 {
+	var fields []Selectable
+
+	optsCopy := make(map[string]any)
+	for k, v := range s.options {
+		optsCopy[k] = v
+	}
+
+	if t, ok := optsCopy["transformations"].([]Selectable); ok {
+		fields = t
+		delete(optsCopy, "transformations")
+	}
+
+	if len(fields) > 0 {
 		var err error
-		mapVal, err = projectionsToMapValue(s.fields)
+		mapVal, err = projectionsToMapValue(fields)
 		if err != nil {
 			return nil, err
 		}
@@ -774,23 +786,36 @@ func (s *updateStage) toProto() (*pb.Pipeline_Stage, error) {
 		mapVal = &pb.Value{ValueType: &pb.Value_MapValue{MapValue: &pb.MapValue{}}}
 	}
 
+	optionsPb, err := stageOptionsToProto(optsCopy)
+	if err != nil {
+		return nil, err
+	}
+
 	return &pb.Pipeline_Stage{
-		Name: s.name(),
-		Args: []*pb.Value{mapVal},
+		Name:    s.name(),
+		Args:    []*pb.Value{mapVal},
+		Options: optionsPb,
 	}, nil
 }
 
-type deleteStage struct{}
+type deleteStage struct {
+	options map[string]any
+}
 
-func newDeleteStage() *deleteStage {
-	return &deleteStage{}
+func newDeleteStage(options map[string]any) *deleteStage {
+	return &deleteStage{options: options}
 }
 
 func (s *deleteStage) name() string { return stageNameDelete }
 
 func (s *deleteStage) toProto() (*pb.Pipeline_Stage, error) {
+	optionsPb, err := stageOptionsToProto(s.options)
+	if err != nil {
+		return nil, err
+	}
 	return &pb.Pipeline_Stage{
-		Name: s.name(),
-		Args: []*pb.Value{},
+		Name:    s.name(),
+		Args:    []*pb.Value{},
+		Options: optionsPb,
 	}, nil
 }
