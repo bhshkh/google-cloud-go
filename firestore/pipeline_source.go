@@ -15,7 +15,7 @@
 package firestore
 
 // PipelineSource is a factory for creating Pipeline instances.
-// It is obtained by calling [Client.Pipeline()].
+// It is obtained by calling [Client.Pipeline].
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
