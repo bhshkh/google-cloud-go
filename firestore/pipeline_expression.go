@@ -639,6 +639,7 @@ func (b *baseExpression) ArraySliceToEnd(offset any) Expression { return ArraySl
 func (b *baseExpression) ArraySlice(offset, length any) Expression {
 	return ArraySlice(b, offset, length)
 }
+
 func (b *baseExpression) ArrayIndexOf(search any) Expression {
 	return ArrayIndexOf(b, search)
 }
