@@ -24,9 +24,9 @@ type BooleanExpression interface {
 
 	// Conditional creates an expression that evaluates a condition and returns one of two expressions.
 	//
-	// The parameter 'thenVal' is the expression to return if the condition is true.
-	// The parameter 'elseVal' is the expression to return if the condition is false.
-	Conditional(thenVal, elseVal any) Expression
+	// The parameter 'thenValOrExpr' is the expression to return if the condition is true.
+	// The parameter 'elseValOrExpr' is the expression to return if the condition is false.
+	Conditional(thenValOrExpr, elseValOrExpr any) Expression
 	// IfErrorBoolean creates a boolean expression that evaluates and returns the receiver expression if it does not produce an error;
 	// otherwise, it evaluates and returns `catchExpr`.
 	//
@@ -45,8 +45,8 @@ type baseBooleanExpression struct {
 }
 
 func (b *baseBooleanExpression) isBooleanExpr() {}
-func (b *baseBooleanExpression) Conditional(thenVal, elseVal any) Expression {
-	return Conditional(b, thenVal, elseVal)
+func (b *baseBooleanExpression) Conditional(thenValOrExpr, elseValOrExpr any) Expression {
+	return Conditional(b, thenValOrExpr, elseValOrExpr)
 }
 func (b *baseBooleanExpression) IfErrorBoolean(catchExpr BooleanExpression) BooleanExpression {
 	return IfErrorBoolean(b, catchExpr)
@@ -306,7 +306,7 @@ func Like(exprOrFieldPath any, pattern any) BooleanExpression {
 
 // RegexContains creates an expression that checks if a string contains a match for a regular expression.
 // - exprOrFieldPath can be a field path string, [FieldPath] or [Expression].
-// - pattern is the regular expression to search for.
+// - pattern is the regular expression to search for. It can be a string or [Expression] that evaluates to a string.
 //
 // Example:
 //
@@ -321,7 +321,7 @@ func RegexContains(exprOrFieldPath any, pattern any) BooleanExpression {
 
 // RegexMatch creates an expression that checks if a string matches a regular expression.
 // - exprOrFieldPath can be a field path string, [FieldPath] or [Expression].
-// - pattern is the regular expression to match against.
+// - pattern is the regular expression to match against. It can be a string or [Expression] that evaluates to a string.
 //
 // Example:
 //
@@ -368,8 +368,8 @@ func StringContains(exprOrFieldPath any, substring any) BooleanExpression {
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
-func And(condition BooleanExpression, right ...BooleanExpression) BooleanExpression {
-	return &baseBooleanExpression{baseFunction: newBaseFunctionFromBooleans("and", append([]BooleanExpression{condition}, right...))}
+func And(condition BooleanExpression, others ...BooleanExpression) BooleanExpression {
+	return &baseBooleanExpression{baseFunction: newBaseFunctionFromBooleans("and", append([]BooleanExpression{condition}, others...))}
 }
 
 // FieldExists creates an expression that checks if a field exists.
@@ -392,24 +392,24 @@ func Not(condition BooleanExpression) BooleanExpression {
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
-func Nor(condition BooleanExpression, right ...BooleanExpression) BooleanExpression {
-	return &baseBooleanExpression{baseFunction: newBaseFunctionFromBooleans("nor", append([]BooleanExpression{condition}, right...))}
+func Nor(condition BooleanExpression, others ...BooleanExpression) BooleanExpression {
+	return &baseBooleanExpression{baseFunction: newBaseFunctionFromBooleans("nor", append([]BooleanExpression{condition}, others...))}
 }
 
 // Or creates an expression that performs a logical 'OR' operation.
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
-func Or(condition BooleanExpression, right ...BooleanExpression) BooleanExpression {
-	return &baseBooleanExpression{baseFunction: newBaseFunctionFromBooleans("or", append([]BooleanExpression{condition}, right...))}
+func Or(condition BooleanExpression, others ...BooleanExpression) BooleanExpression {
+	return &baseBooleanExpression{baseFunction: newBaseFunctionFromBooleans("or", append([]BooleanExpression{condition}, others...))}
 }
 
 // Xor creates an expression that performs a logical 'XOR' operation.
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
-func Xor(condition BooleanExpression, right ...BooleanExpression) BooleanExpression {
-	return &baseBooleanExpression{baseFunction: newBaseFunctionFromBooleans("xor", append([]BooleanExpression{condition}, right...))}
+func Xor(condition BooleanExpression, others ...BooleanExpression) BooleanExpression {
+	return &baseBooleanExpression{baseFunction: newBaseFunctionFromBooleans("xor", append([]BooleanExpression{condition}, others...))}
 }
 
 // IsError creates an expression that checks if an expression evaluates to an error.
@@ -428,15 +428,28 @@ func IsAbsent(exprOrField any) BooleanExpression {
 	return &baseBooleanExpression{baseFunction: newBaseFunction("is_absent", []Expression{asFieldExpr(exprOrField)})}
 }
 
+// RawBooleanFunction creates a 'raw' boolean function expression.
+// This is useful if the expression is available in the backend, but not yet in the current version of the SDK.
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+func RawBooleanFunction(name string, exprs ...any) BooleanExpression {
+	expressions := make([]Expression, len(exprs))
+	for i, expr := range exprs {
+		expressions[i] = asFieldExpr(expr)
+	}
+	return &baseBooleanExpression{baseFunction: newBaseFunction(name, expressions)}
+}
+
 // IsType creates an expression that checks if an expression is of a specific type.
 //   - exprOrField can be a field path string, [FieldPath] or an [Expression].
-//   - dataType can be a string constant or an [Expression] that evaluates to a type name. Valid values are
+//   - dataType can be a valid type name. Valid values are
 //     "null", "array", "boolean", "bytes", "timestamp", "geo_point", "number", "int32", "int64",
 //     "float64", "decimal128", "map", "reference", "string", "vector", "max_key", "min_key",
 //     "min_array", "object_id", "regex", "request_timestamp"
 //
 // Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
 // regardless of any other documented package stability guarantees.
-func IsType(exprOrField any, dataType any) BooleanExpression {
-	return &baseBooleanExpression{baseFunction: newBaseFunction("is_type", []Expression{asFieldExpr(exprOrField), asStringExpr(dataType)})}
+func IsType(exprOrField any, dataType string) BooleanExpression {
+	return &baseBooleanExpression{baseFunction: newBaseFunction("is_type", []Expression{asFieldExpr(exprOrField), ConstantOf(dataType)})}
 }
