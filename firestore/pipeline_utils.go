@@ -144,7 +144,7 @@ func asFieldExpr(val any) Expression {
 	case string:
 		return FieldOf(v)
 	default:
-		return &baseExpression{err: fmt.Errorf("firestore: value must be a string, FieldPath, or Expr, but got %T", val)}
+		return ConstantOf(val)
 	}
 }
 

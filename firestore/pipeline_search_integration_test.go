@@ -124,11 +124,40 @@ func TestIntegration_PipelineSearch(t *testing.T) {
 		deleteCollection(ctx, coll)
 	})
 
+	// =========================================================================
+	// Search stage
+	// =========================================================================
+
+	// --- DISABLE query expansion ---
+
+	// query
+	//  TODO(search) enable with backend support
+	//  t.Run("searchWithLanguageCode", func(t *testing.T) {
+	//  	pipeline := client.Pipeline().Collection(collectionName).Search(
+	//  		WithSearchQuery("waffles"),
+	//  		// WithSearchLanguageCode("en"),
+	//  		// WithSearchQueryEnhancementDisabled(),
+	//  	)
+	//  	snapshot := pipeline.Execute(ctx)
+	//  	assertResultIds(t, snapshot, "goldenWaffle")
+	//  })
+
 	t.Run("searchFullDocument", func(t *testing.T) {
 		pipeline := client.Pipeline().Collection(collectionName).Search(WithSearchQuery("waffles"))
+		// Search(WithSearchQuery("waffles"), WithSearchQueryEnhancementDisabled())
+
 		snapshot := pipeline.Execute(ctx)
 		assertResultIds(t, snapshot, "goldenWaffle")
 	})
+
+	// t.Run("searchSpecificField", func(t *testing.T) {
+	// 	pipeline := client.Pipeline().Collection(collectionName).Search(
+	// 		WithSearchQuery(Matches("menu", "waffles")),
+	// 		// WithSearchQueryEnhancementDisabled(),
+	// 	)
+	// 	snapshot := pipeline.Execute(ctx)
+	// 	assertResultIds(t, snapshot, "goldenWaffle")
+	// })
 
 	t.Run("geoNearQuery", func(t *testing.T) {
 		pipeline := client.Pipeline().Collection(collectionName).Search(
@@ -137,23 +166,99 @@ func TestIntegration_PipelineSearch(t *testing.T) {
 					GeoDistance(&latlng.LatLng{Latitude: 39.6985, Longitude: -105.024}).
 					LessThanOrEqual(1000)),
 		)
+		// 		// WithSearchQueryEnhancementDisabled(),
+
 		snapshot := pipeline.Execute(ctx)
 		assertResultIds(t, snapshot, "solTacos")
 	})
 
+	//  TODO(search) enable with backend support
+	//  t.Run("conjunctionOfTextSearchPredicates", func(t *testing.T) {
+	//  	pipeline := client.Pipeline().Collection(collectionName).Search(
+	//  		WithSearchQuery(And(Matches("menu", "waffles"), Matches("description", "diner"))),
+	//  		// WithSearchQueryEnhancementDisabled(),
+	//  	)
+	//  	snapshot := pipeline.Execute(ctx)
+	//  	assertResultIds(t, snapshot, "goldenWaffle", "sunnySideUp")
+	//  })
+
+	// TODO(search) enable test when geo+text search indexes are supported
+	// t.Run("conjunctionOfTextSearchAndGeoNear", func(t *testing.T) {
+	// 	pipeline := client.Pipeline().Collection(collectionName).Search(
+	// 		WithSearchQuery(And(Matches("menu", "tacos"), LessThan(GeoDistance("location", &latlng.LatLng{Latitude: 39.6985, Longitude: -105.024}), 10000))),
+	// 		// WithSearchQueryEnhancementDisabled(),
+	// 	)
+	// 	snapshot := pipeline.Execute(ctx)
+	// 	assertResultIds(t, snapshot, "solTacos")
+	// })
+
 	t.Run("negateMatch", func(t *testing.T) {
 		pipeline := client.Pipeline().Collection(collectionName).
 			Search(WithSearchQuery(DocumentMatches("coffee -waffles")))
+		// 		// WithSearchQueryEnhancementDisabled(),
 		snapshot := pipeline.Execute(ctx)
 		assertResultIds(t, snapshot, "sunnySideUp")
 	})
 
+	//  TODO(search) enable with backend support
+	//  t.Run("rquerySearchTheDocumentWithConjunctionAndDisjunction", func(t *testing.T) {
+	//  	pipeline := client.Pipeline().Collection(collectionName).Search(
+	//  		WithSearchQuery(DocumentMatches("(waffles OR pancakes) AND coffee")),
+	//  		// WithSearchQueryEnhancementDisabled(),
+	//  	)
+	//  	snapshot := pipeline.Execute(ctx)
+	//  	assertResultIds(t, snapshot, "goldenWaffle", "sunnySideUp")
+	//  })
+
 	t.Run("rqueryAsQueryParam", func(t *testing.T) {
 		pipeline := client.Pipeline().Collection(collectionName).
 			Search(WithSearchQuery("chicken wings"))
+		// 		// WithSearchQueryEnhancementDisabled(),
 		snapshot := pipeline.Execute(ctx)
 		assertResultIds(t, snapshot, "eastsideChicken")
 	})
+
+	// TODO(search) enable when rquery supports field paths
+	// t.Run("rquerySupportsFieldPaths", func(t *testing.T) {
+	// 	pipeline := client.Pipeline().Collection(collectionName).Search(
+	// 		WithSearchQuery("menu:(waffles OR pancakes) AND description:\"breakfast all day\""),
+	// 		// WithSearchQueryEnhancementDisabled(),
+	// 	)
+	// 	snapshot := pipeline.Execute(ctx)
+	// 	assertResultIds(t, snapshot, "sunnySideUp")
+	// })
+
+	//  TODO(search) enable with backend support
+	//  t.Run("conjunctionOfRqueryAndExpression", func(t *testing.T) {
+	//  	pipeline := client.Pipeline().Collection(collectionName).Search(
+	//  		WithSearchQuery(And(DocumentMatches("tacos"), GreaterThanOrEqual("average_price_per_person", 8), LessThanOrEqual("average_price_per_person", 15))),
+	//  		// WithSearchQueryEnhancementDisabled(),
+	//  	)
+	//  	snapshot := pipeline.Execute(ctx)
+	//  	assertResultIds(t, snapshot, "solTacos")
+	//  })
+
+	// --- REQUIRE query expansion ---
+
+	//  TODO(search) enable with backend support
+	//  t.Run("requireQueryExpansion_searchFullDocument", func(t *testing.T) {
+	//  	pipeline := client.Pipeline().Collection(collectionName).Search(
+	//  		WithSearchQuery(DocumentMatches("waffles")),
+	//  		// WithSearchQueryEnhancementRequired(),
+	//  	)
+	//  	snapshot := pipeline.Execute(ctx)
+	//  	assertResultIds(t, snapshot, "goldenWaffle", "sunnySideUp")
+	//  })
+
+	// TODO(search) re-enable when backend supports field matches and QueryEnhancement
+	// t.Run("requireQueryExpansion_searchSpecificField", func(t *testing.T) {
+	// 	pipeline := client.Pipeline().Collection(collectionName).Search(
+	// 		WithSearchQuery(Matches("menu", "waffles")),
+	// 		// WithSearchQueryEnhancementRequired(),
+	// 	)
+	// 	snapshot := pipeline.Execute(ctx)
+	// 	assertResultIds(t, snapshot, "goldenWaffle", "sunnySideUp")
+	// })
 
 	// add fields
 	t.Run("addFields_score", func(t *testing.T) {
@@ -162,6 +267,7 @@ func TestIntegration_PipelineSearch(t *testing.T) {
 				WithSearchQuery(DocumentMatches("waffles")),
 				WithSearchAddFields(Score().As("searchScore")),
 			).
+			// WithSearchQueryEnhancementDisabled(),
 			Select([]any{"name", "searchScore"})
 
 		snapshot := pipeline.Execute(ctx)
@@ -182,6 +288,60 @@ func TestIntegration_PipelineSearch(t *testing.T) {
 			t.Errorf("Expected searchScore > 0.0, got %v", data["searchScore"])
 		}
 	})
+
+	//    t.Run("addFields_geoDistance", func(t *testing.T) {
+	//        pipeline := client.Pipeline().Collection(collectionName).Search(
+	//                WithSearchQuery(DocumentMatches("waffles")),
+	//                WithSearchAddFields(GeoDistance("location", &latlng.LatLng{Latitude: 39.6985, Longitude: -105.024}).As("geoDistance")),
+	//                // WithSearchQueryEnhancementDisabled(),
+	//        ).Select([]any{"name", "geoDistance"})
+	//
+	//        snapshot := pipeline.Execute(ctx)
+	//        results, err := snapshot.Results().GetAll()
+	//        if err != nil { t.Fatalf("GetAll failed: %v", err) }
+	//        if len(results) != 1 { t.Fatalf("Expected 1 result, got %d", len(results)) }
+	//        result := results[0]
+	//        if result.Data()["name"] != "The Golden Waffle" { t.Errorf("Expected name 'The Golden Waffle', got %v", result.Data()["name"]) }
+	//        if dist, ok := result.Data()["geoDistance"].(float64); !ok || dist <= 0.0 { t.Errorf("Expected geoDistance > 0.0, got %v", result.Data()["geoDistance"]) }
+	//    })
+
+	// TODO(search) enable with backend support
+	//  t.Run("addFields_multipleFields", func(t *testing.T) {
+	//    pipeline := client.Pipeline().Collection(collectionName).Search(
+	//            WithSearchQuery(DocumentMatches("waffles")),
+	//            WithSearchAddFields(Score().As("searchScore"), Snippet("menu", "waffles").As("snippet")),
+	//            // WithSearchQueryEnhancementDisabled(),
+	//    ).Select([]any{"name", "searchScore", "snippet"})
+	//
+	//    snapshot := pipeline.Execute(ctx)
+	//    results, err := snapshot.Results().GetAll()
+	//    if err != nil { t.Fatalf("GetAll failed: %v", err) }
+	//    if len(results) != 1 { t.Fatalf("Expected 1 result, got %d", len(results)) }
+	//    result := results[0]
+	//    if result.Data()["name"] != "The Golden Waffle" { t.Errorf("Expected name 'The Golden Waffle', got %v", result.Data()["name"]) }
+	//    if score, ok := result.Data()["searchScore"].(float64); !ok || score <= 0.0 { t.Errorf("Expected searchScore > 0.0, got %v", result.Data()["searchScore"]) }
+	//    if snippet, ok := result.Data()["snippet"].(string); !ok || len(snippet) == 0 { t.Errorf("Expected snippet length > 0, got %v", result.Data()["snippet"]) }
+	//  })
+
+	// select
+	// TODO(search) enable with backend support
+	//  t.Run("select_topicalityScoreAndSnippet", func(t *testing.T) {
+	//    pipeline := client.Pipeline().Collection(collectionName).Search(
+	//        WithSearchQuery(DocumentMatches("waffles")),
+	//        WithSearchAddFields(Score().As("searchScore"), Snippet("menu", "waffles").As("snippet")), // Select is mapped from WithSearchAddFields in java's `withSelect` for score/snippet
+	//        // WithSearchQueryEnhancementDisabled(),
+	//    ).Select([]any{"name", "location", "searchScore", "snippet"})
+	//
+	//    snapshot := pipeline.Execute(ctx)
+	//    results, err := snapshot.Results().GetAll()
+	//    if err != nil { t.Fatalf("GetAll failed: %v", err) }
+	//    if len(results) != 1 { t.Fatalf("Expected 1 result, got %d", len(results)) }
+	//    result := results[0]
+	//    if result.Data()["name"] != "The Golden Waffle" { t.Errorf("Expected name 'The Golden Waffle', got %v", result.Data()["name"]) }
+	//    if result.Data()["location"] != (&latlng.LatLng{Latitude: 39.7183, Longitude: -104.9621}) { t.Errorf("Expected location, got %v", result.Data()["location"]) }
+	//    if score, ok := result.Data()["searchScore"].(float64); !ok || score <= 0.0 { t.Errorf("Expected searchScore > 0.0, got %v", result.Data()["searchScore"]) }
+	//    if snippet, ok := result.Data()["snippet"].(string); !ok || len(snippet) == 0 { t.Errorf("Expected snippet length > 0, got %v", result.Data()["snippet"]) }
+	//  })
 
 	// sort
 	t.Run("sort_byScore", func(t *testing.T) {
@@ -204,7 +364,105 @@ func TestIntegration_PipelineSearch(t *testing.T) {
 			),
 			WithSearchSort(GeoDistance("location", queryLocation).Ascending()),
 		)
+		// // WithSearchQueryEnhancementDisabled(),
 		snapshot := pipeline.Execute(ctx)
 		assertResultIds(t, snapshot, "solTacos", "lotusBlossomThai", "mileHighCatch")
 	})
+
+	// TODO(search) re-enable when geo+text search indexes are supported
+	// t.Run("sort_byMultipleOrderings", func(t *testing.T) {
+	// 	pipeline := client.Pipeline().Collection(collectionName).Search(
+	// 		WithSearchQuery(Matches("menu", "tacos OR chicken")),
+	// 		WithSearchSort(
+	// 			Ascending(GeoDistance("location", &latlng.LatLng{Latitude: 39.6985, Longitude: -105.024})),
+	// 			Descending(Score()),
+	// 		),
+	// 		// WithSearchQueryEnhancementDisabled(),
+	// 	)
+	// 	snapshot := pipeline.Execute(ctx)
+	// 	assertResultIds(t, snapshot, "solTacos", "eastsideTacos", "eastsideChicken")
+	// })
+
+	// limit
+	// TODO(search) enable with backend support
+	//  t.Run("limit_limitsTheNumberOfDocumentsReturned", func(t *testing.T) {
+	//    pipeline := client.Pipeline().Collection(collectionName).Search(
+	//            WithSearchQuery(ConstantOf(true)), // constant(true)
+	//            WithSearchSort(Ascending(GeoDistance("location", &latlng.LatLng{Latitude: 39.6985, Longitude: -105.024}))),
+	//            // WithSearchQueryEnhancementDisabled(),
+	//    ).Limit(5) // Or Search has WithLimit? No, Pipeline Limit. Java uses .search(..., .withLimit(5)). In Go we can just use Pipeline.Limit(5) or WithSearchLimit...? Wait, Java's .withLimit is on SearchOptions. Go's SearchOptions doesn't have it, but we can map it to Pipeline.Limit or add WithSearchLimit. I'll use Pipeline.Limit.
+	//
+	//    snapshot := pipeline.Execute(ctx)
+	//    assertResultIds(t, snapshot, "solTacos", "lotusBlossomThai", "goldenWaffle")
+	//  })
+
+	//    t.Run("limit_limitsTheNumberOfDocumentsRetrieved", func(t *testing.T) {
+	//        pipeline := client.Pipeline().Collection(collectionName).Search(
+	//                WithSearchQuery(DocumentMatches("chicken")),
+	//                WithSearchRetrievalDepth(3),
+	//                // WithSearchQueryEnhancementDisabled(),
+	//        )
+	//
+	//        snapshot := pipeline.Execute(ctx)
+	//        assertResultIds(t, snapshot, "eastsideChicken", "lotusBlossomThai", "goldenWaffle")
+	//
+	//        pipeline = client.Pipeline().Collection(collectionName).Search(
+	//                WithSearchQuery(DocumentMatches("chicken")),
+	//                // WithSearchQueryEnhancementDisabled(),
+	//        )
+	//
+	//        snapshot = pipeline.Execute(ctx)
+	//        assertResultIds(t, snapshot, "eastsideChicken", "lotusBlossomThai", "goldenWaffle", "eastsideCantina")
+	//    })
+
+	// offset
+	// TODO(search) enable with backend support
+	//  t.Run("offset_skipsNDocuments", func(t *testing.T) {
+	//    pipeline := client.Pipeline().Collection(collectionName).Search(
+	//            WithSearchQuery(ConstantOf(true)),
+	//            // WithSearchQueryEnhancementDisabled(),
+	//    ).Limit(2).Offset(2)
+	//
+	//    snapshot := pipeline.Execute(ctx)
+	//    assertResultIds(t, snapshot, "eastsideChicken", "eastsideTacos")
+	//  })
+
+	// =========================================================================
+	// Snippet
+	// =========================================================================
+
+	// TODO(search) enable with backend support
+	//  t.Run("snippetOnMultipleFields", func(t *testing.T) {
+	//    // Get snippet from 1 field
+	//    pipeline1 := client.Pipeline().Collection(collectionName).Search(
+	//            WithSearchQuery(DocumentMatches("waffle")),
+	//            WithSearchAddFields(Snippet("menu", "waffles").As("snippet")),
+	//            // WithSearchQueryEnhancementDisabled(),
+	//    )
+	//
+	//    snapshot1 := pipeline1.Execute(ctx)
+	//    results1, err := snapshot1.Results().GetAll()
+	//    if err != nil { t.Fatalf("GetAll failed: %v", err) }
+	//    if len(results1) != 1 { t.Fatalf("Expected 1 result, got %d", len(results1)) }
+	//    result1 := results1[0]
+	//    if result1.Data()["name"] != "The Golden Waffle" { t.Errorf("Expected name 'The Golden Waffle', got %v", result1.Data()["name"]) }
+	//    snip1 := result1.Data()["snippet"].(string)
+	//    if len(snip1) <= 0 { t.Errorf("Expected snippet length > 0, got %v", snip1) }
+	//
+	//    // Get snippet from 2 fields
+	//    pipeline2 := client.Pipeline().Collection(collectionName).Search(
+	//            WithSearchQuery(DocumentMatches("waffle")),
+	//            WithSearchAddFields(StringConcat(FieldOf("menu"), FieldOf("description")).Snippet("waffles").As("snippet")),
+	//            // WithSearchQueryEnhancementDisabled(),
+	//    )
+	//
+	//    snapshot2 := pipeline2.Execute(ctx)
+	//    results2, err := snapshot2.Results().GetAll()
+	//    if err != nil { t.Fatalf("GetAll failed: %v", err) }
+	//    if len(results2) != 1 { t.Fatalf("Expected 1 result, got %d", len(results2)) }
+	//    result2 := results2[0]
+	//    if result2.Data()["name"] != "The Golden Waffle" { t.Errorf("Expected name 'The Golden Waffle', got %v", result2.Data()["name"]) }
+	//    snip2 := result2.Data()["snippet"].(string)
+	//    if len(snip2) <= len(snip1) { t.Errorf("Expected snip2 length > snip1 length, got %d vs %d", len(snip2), len(snip1)) }
+	//  })
 }

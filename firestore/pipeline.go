@@ -103,6 +103,8 @@ type ExplainMode string
 const (
 	// ExplainModeAnalyze both plans and executes the query.
 	ExplainModeAnalyze ExplainMode = "analyze"
+	// ExplainModeExplain only plans the query.
+	ExplainModeExplain ExplainMode = "explain"
 )
 
 // executeExplainOptions are options for explaining a pipeline execution.
@@ -117,6 +119,16 @@ type executeExplainOptions struct {
 func WithExplainMode(mode ExplainMode) ExecuteOption {
 	return newFuncExecuteOption(func(eo *executeSettings) {
 		eo.ExplainOptions = &executeExplainOptions{Mode: mode}
+	})
+}
+
+// WithIndexMode sets the IndexMode for pipeline explain.
+//
+// Experimental: Firestore Pipelines is currently in preview and is subject to potential breaking changes in future versions,
+// regardless of any other documented package stability guarantees.
+func WithIndexMode(mode string) ExecuteOption {
+	return newFuncExecuteOption(func(eo *executeSettings) {
+		eo.IndexMode = mode
 	})
 }
 

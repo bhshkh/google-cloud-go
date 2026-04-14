@@ -60,7 +60,7 @@ func ConstantOf(value any) Expression {
 		return &constant{baseExpression: &baseExpression{pbVal: pbVal}}
 	}
 
-	// Safely fall back to arrays/slices
+	// Safely fall back to arrays/slices for parity with Java and Node.js
 	v := reflect.ValueOf(value)
 	if !v.IsValid() {
 		return &constant{baseExpression: &baseExpression{err: fmt.Errorf("firestore: unknown constant type: %T", value)}}
