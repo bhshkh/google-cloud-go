@@ -87,6 +87,16 @@
               "methods": [
                 "CalendarMode"
               ]
+            },
+            "Capacity": {
+              "methods": [
+                "Capacity"
+              ]
+            },
+            "CapacityHistory": {
+              "methods": [
+                "CapacityHistory"
+              ]
             }
           }
         }
@@ -489,6 +499,11 @@
             "Update": {
               "methods": [
                 "Update"
+              ]
+            },
+            "UpdateKmsKey": {
+              "methods": [
+                "UpdateKmsKey"
               ]
             }
           }
@@ -2161,6 +2176,16 @@
                 "Get"
               ]
             },
+            "GetIamPolicy": {
+              "methods": [
+                "GetIamPolicy"
+              ]
+            },
+            "SetIamPolicy": {
+              "methods": [
+                "SetIamPolicy"
+              ]
+            },
             "TestIamPermissions": {
               "methods": [
                 "TestIamPermissions"
@@ -3368,6 +3393,11 @@
                 "Get"
               ]
             },
+            "GetHealth": {
+              "methods": [
+                "GetHealth"
+              ]
+            },
             "Insert": {
               "methods": [
                 "Insert"
@@ -3518,6 +3548,11 @@
             "Update": {
               "methods": [
                 "Update"
+              ]
+            },
+            "UpdateKmsKey": {
+              "methods": [
+                "UpdateKmsKey"
               ]
             }
           }
@@ -3674,6 +3709,11 @@
             "Get": {
               "methods": [
                 "Get"
+              ]
+            },
+            "GetHealth": {
+              "methods": [
+                "GetHealth"
               ]
             },
             "Insert": {
@@ -4507,6 +4547,11 @@
             "TestIamPermissions": {
               "methods": [
                 "TestIamPermissions"
+              ]
+            },
+            "UpdateKmsKey": {
+              "methods": [
+                "UpdateKmsKey"
               ]
             }
           }
@@ -5490,6 +5535,11 @@
             "TestIamPermissions": {
               "methods": [
                 "TestIamPermissions"
+              ]
+            },
+            "UpdateKmsKey": {
+              "methods": [
+                "UpdateKmsKey"
               ]
             }
           }

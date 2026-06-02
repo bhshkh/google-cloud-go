@@ -2,6 +2,14 @@
 
 
 
+## [1.9.0](https://github.com/googleapis/google-cloud-go/releases/tag/securesourcemanager%2Fv1.9.0) (2026-05-07)
+
+## [1.8.0](https://github.com/googleapis/google-cloud-go/releases/tag/securesourcemanager%2Fv1.8.0) (2026-04-30)
+
+## [1.7.0](https://github.com/googleapis/google-cloud-go/releases/tag/securesourcemanager%2Fv1.7.0) (2026-04-13)
+
+## [1.6.0](https://github.com/googleapis/google-cloud-go/releases/tag/securesourcemanager%2Fv1.6.0) (2026-04-09)
+
 ## [1.5.0](https://github.com/googleapis/google-cloud-go/releases/tag/securesourcemanager%2Fv1.5.0) (2026-04-02)
 
 ## [1.4.1](https://github.com/googleapis/google-cloud-go/compare/securesourcemanager/v1.4.0...securesourcemanager/v1.4.1) (2025-09-22)

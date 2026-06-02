@@ -32,6 +32,7 @@ import (
 	lroauto "cloud.google.com/go/longrunning/autogen"
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	gax "github.com/googleapis/gax-go/v2"
+	"github.com/googleapis/gax-go/v2/callctx"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"google.golang.org/api/option/internaloption"
@@ -823,14 +824,21 @@ func (c *Client) GetLocation(ctx context.Context, req *locationpb.GetLocationReq
 }
 
 // ListLocations lists information about the supported locations for this service.
-// This method can be called in two ways:
 //
-//	List all public locations: Use the path GET /v1/locations.
+// This method lists locations based on the resource scope provided in
+// the [ListLocationsRequest.name (at http://ListLocationsRequest.name)][google.cloud.location.ListLocationsRequest.name (at http://google.cloud.location.ListLocationsRequest.name)] field: *
+// Global locations: If name is empty, the method lists the
+// public locations available to all projects. * Project-specific
+// locations: If name follows the format
+// projects/{project}, the method lists locations visible to that
+// specific project. This includes public, private, or other
+// project-specific locations enabled for the project.
 //
-//	List project-visible locations: Use the path
-//	GET /v1/projects/{project_id}/locations. This may include public
-//	locations as well as private or other locations specifically visible
-//	to the project.
+// For gRPC and client library implementations, the resource name is
+// passed as the name field. For direct service calls, the resource
+// name is
+// incorporated into the request path based on the specific service
+// implementation and version.
 func (c *Client) ListLocations(ctx context.Context, req *locationpb.ListLocationsRequest, opts ...gax.CallOption) *LocationIterator {
 	return c.internalClient.ListLocations(ctx, req, opts...)
 }
@@ -921,6 +929,16 @@ type gRPCClient struct {
 // systems including Cloud Storage and BigQuery.
 func NewClient(ctx context.Context, opts ...option.ClientOption) (*Client, error) {
 	clientOpts := defaultGRPCClientOptions()
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		clientOpts = append(clientOpts, internaloption.WithTelemetryAttributes(map[string]string{
+			"gcp.client.service":  "dataplex",
+			"gcp.client.version":  getVersionClient(),
+			"gcp.client.repo":     "googleapis/google-cloud-go",
+			"gcp.client.artifact": "cloud.google.com/go/dataplex/apiv1",
+			"gcp.client.language": "go",
+			"url.domain":          "dataplex.googleapis.com",
+		}))
+	}
 	if newClientHook != nil {
 		hookOpts, err := newClientHook(ctx, clientHookParams{})
 		if err != nil {
@@ -945,6 +963,55 @@ func NewClient(ctx context.Context, opts ...option.ClientOption) (*Client, error
 		locationsClient:  locationpb.NewLocationsClient(connPool),
 	}
 	c.setGoogleClientInfo()
+	if gax.IsFeatureEnabled("METRICS") {
+		metrics := gax.NewClientMetrics(
+			gax.WithTelemetryLogger(c.logger),
+			gax.WithTelemetryAttributes(map[string]string{
+				gax.ClientService:  "dataplex",
+				gax.ClientVersion:  getVersionClient(),
+				gax.ClientArtifact: "cloud.google.com/go/dataplex/apiv1",
+				gax.RPCSystem:      "grpc",
+				gax.URLDomain:      "dataplex.googleapis.com",
+			}),
+		)
+
+		client.CallOptions.CreateLake = append(client.CallOptions.CreateLake, gax.WithClientMetrics(metrics))
+		client.CallOptions.UpdateLake = append(client.CallOptions.UpdateLake, gax.WithClientMetrics(metrics))
+		client.CallOptions.DeleteLake = append(client.CallOptions.DeleteLake, gax.WithClientMetrics(metrics))
+		client.CallOptions.ListLakes = append(client.CallOptions.ListLakes, gax.WithClientMetrics(metrics))
+		client.CallOptions.GetLake = append(client.CallOptions.GetLake, gax.WithClientMetrics(metrics))
+		client.CallOptions.ListLakeActions = append(client.CallOptions.ListLakeActions, gax.WithClientMetrics(metrics))
+		client.CallOptions.CreateZone = append(client.CallOptions.CreateZone, gax.WithClientMetrics(metrics))
+		client.CallOptions.UpdateZone = append(client.CallOptions.UpdateZone, gax.WithClientMetrics(metrics))
+		client.CallOptions.DeleteZone = append(client.CallOptions.DeleteZone, gax.WithClientMetrics(metrics))
+		client.CallOptions.ListZones = append(client.CallOptions.ListZones, gax.WithClientMetrics(metrics))
+		client.CallOptions.GetZone = append(client.CallOptions.GetZone, gax.WithClientMetrics(metrics))
+		client.CallOptions.ListZoneActions = append(client.CallOptions.ListZoneActions, gax.WithClientMetrics(metrics))
+		client.CallOptions.CreateAsset = append(client.CallOptions.CreateAsset, gax.WithClientMetrics(metrics))
+		client.CallOptions.UpdateAsset = append(client.CallOptions.UpdateAsset, gax.WithClientMetrics(metrics))
+		client.CallOptions.DeleteAsset = append(client.CallOptions.DeleteAsset, gax.WithClientMetrics(metrics))
+		client.CallOptions.ListAssets = append(client.CallOptions.ListAssets, gax.WithClientMetrics(metrics))
+		client.CallOptions.GetAsset = append(client.CallOptions.GetAsset, gax.WithClientMetrics(metrics))
+		client.CallOptions.ListAssetActions = append(client.CallOptions.ListAssetActions, gax.WithClientMetrics(metrics))
+		client.CallOptions.CreateTask = append(client.CallOptions.CreateTask, gax.WithClientMetrics(metrics))
+		client.CallOptions.UpdateTask = append(client.CallOptions.UpdateTask, gax.WithClientMetrics(metrics))
+		client.CallOptions.DeleteTask = append(client.CallOptions.DeleteTask, gax.WithClientMetrics(metrics))
+		client.CallOptions.ListTasks = append(client.CallOptions.ListTasks, gax.WithClientMetrics(metrics))
+		client.CallOptions.GetTask = append(client.CallOptions.GetTask, gax.WithClientMetrics(metrics))
+		client.CallOptions.ListJobs = append(client.CallOptions.ListJobs, gax.WithClientMetrics(metrics))
+		client.CallOptions.RunTask = append(client.CallOptions.RunTask, gax.WithClientMetrics(metrics))
+		client.CallOptions.GetJob = append(client.CallOptions.GetJob, gax.WithClientMetrics(metrics))
+		client.CallOptions.CancelJob = append(client.CallOptions.CancelJob, gax.WithClientMetrics(metrics))
+		client.CallOptions.GetLocation = append(client.CallOptions.GetLocation, gax.WithClientMetrics(metrics))
+		client.CallOptions.ListLocations = append(client.CallOptions.ListLocations, gax.WithClientMetrics(metrics))
+		client.CallOptions.GetIamPolicy = append(client.CallOptions.GetIamPolicy, gax.WithClientMetrics(metrics))
+		client.CallOptions.SetIamPolicy = append(client.CallOptions.SetIamPolicy, gax.WithClientMetrics(metrics))
+		client.CallOptions.TestIamPermissions = append(client.CallOptions.TestIamPermissions, gax.WithClientMetrics(metrics))
+		client.CallOptions.CancelOperation = append(client.CallOptions.CancelOperation, gax.WithClientMetrics(metrics))
+		client.CallOptions.DeleteOperation = append(client.CallOptions.DeleteOperation, gax.WithClientMetrics(metrics))
+		client.CallOptions.GetOperation = append(client.CallOptions.GetOperation, gax.WithClientMetrics(metrics))
+		client.CallOptions.ListOperations = append(client.CallOptions.ListOperations, gax.WithClientMetrics(metrics))
+	}
 
 	client.internalClient = c
 
@@ -1018,6 +1085,16 @@ type restClient struct {
 // systems including Cloud Storage and BigQuery.
 func NewRESTClient(ctx context.Context, opts ...option.ClientOption) (*Client, error) {
 	clientOpts := append(defaultRESTClientOptions(), opts...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		clientOpts = append(clientOpts, internaloption.WithTelemetryAttributes(map[string]string{
+			"gcp.client.service":  "dataplex",
+			"gcp.client.version":  getVersionClient(),
+			"gcp.client.repo":     "googleapis/google-cloud-go",
+			"gcp.client.artifact": "cloud.google.com/go/dataplex/apiv1",
+			"gcp.client.language": "go",
+			"url.domain":          "dataplex.googleapis.com",
+		}))
+	}
 	httpClient, endpoint, err := httptransport.NewClient(ctx, clientOpts...)
 	if err != nil {
 		return nil, err
@@ -1031,6 +1108,56 @@ func NewRESTClient(ctx context.Context, opts ...option.ClientOption) (*Client, e
 		logger:      internaloption.GetLogger(opts),
 	}
 	c.setGoogleClientInfo()
+
+	if gax.IsFeatureEnabled("METRICS") {
+		metrics := gax.NewClientMetrics(
+			gax.WithTelemetryLogger(c.logger),
+			gax.WithTelemetryAttributes(map[string]string{
+				gax.ClientService:  "dataplex",
+				gax.ClientVersion:  getVersionClient(),
+				gax.ClientArtifact: "cloud.google.com/go/dataplex/apiv1",
+				gax.RPCSystem:      "http",
+				gax.URLDomain:      "dataplex.googleapis.com",
+			}),
+		)
+
+		callOpts.CreateLake = append(callOpts.CreateLake, gax.WithClientMetrics(metrics))
+		callOpts.UpdateLake = append(callOpts.UpdateLake, gax.WithClientMetrics(metrics))
+		callOpts.DeleteLake = append(callOpts.DeleteLake, gax.WithClientMetrics(metrics))
+		callOpts.ListLakes = append(callOpts.ListLakes, gax.WithClientMetrics(metrics))
+		callOpts.GetLake = append(callOpts.GetLake, gax.WithClientMetrics(metrics))
+		callOpts.ListLakeActions = append(callOpts.ListLakeActions, gax.WithClientMetrics(metrics))
+		callOpts.CreateZone = append(callOpts.CreateZone, gax.WithClientMetrics(metrics))
+		callOpts.UpdateZone = append(callOpts.UpdateZone, gax.WithClientMetrics(metrics))
+		callOpts.DeleteZone = append(callOpts.DeleteZone, gax.WithClientMetrics(metrics))
+		callOpts.ListZones = append(callOpts.ListZones, gax.WithClientMetrics(metrics))
+		callOpts.GetZone = append(callOpts.GetZone, gax.WithClientMetrics(metrics))
+		callOpts.ListZoneActions = append(callOpts.ListZoneActions, gax.WithClientMetrics(metrics))
+		callOpts.CreateAsset = append(callOpts.CreateAsset, gax.WithClientMetrics(metrics))
+		callOpts.UpdateAsset = append(callOpts.UpdateAsset, gax.WithClientMetrics(metrics))
+		callOpts.DeleteAsset = append(callOpts.DeleteAsset, gax.WithClientMetrics(metrics))
+		callOpts.ListAssets = append(callOpts.ListAssets, gax.WithClientMetrics(metrics))
+		callOpts.GetAsset = append(callOpts.GetAsset, gax.WithClientMetrics(metrics))
+		callOpts.ListAssetActions = append(callOpts.ListAssetActions, gax.WithClientMetrics(metrics))
+		callOpts.CreateTask = append(callOpts.CreateTask, gax.WithClientMetrics(metrics))
+		callOpts.UpdateTask = append(callOpts.UpdateTask, gax.WithClientMetrics(metrics))
+		callOpts.DeleteTask = append(callOpts.DeleteTask, gax.WithClientMetrics(metrics))
+		callOpts.ListTasks = append(callOpts.ListTasks, gax.WithClientMetrics(metrics))
+		callOpts.GetTask = append(callOpts.GetTask, gax.WithClientMetrics(metrics))
+		callOpts.ListJobs = append(callOpts.ListJobs, gax.WithClientMetrics(metrics))
+		callOpts.RunTask = append(callOpts.RunTask, gax.WithClientMetrics(metrics))
+		callOpts.GetJob = append(callOpts.GetJob, gax.WithClientMetrics(metrics))
+		callOpts.CancelJob = append(callOpts.CancelJob, gax.WithClientMetrics(metrics))
+		callOpts.GetLocation = append(callOpts.GetLocation, gax.WithClientMetrics(metrics))
+		callOpts.ListLocations = append(callOpts.ListLocations, gax.WithClientMetrics(metrics))
+		callOpts.GetIamPolicy = append(callOpts.GetIamPolicy, gax.WithClientMetrics(metrics))
+		callOpts.SetIamPolicy = append(callOpts.SetIamPolicy, gax.WithClientMetrics(metrics))
+		callOpts.TestIamPermissions = append(callOpts.TestIamPermissions, gax.WithClientMetrics(metrics))
+		callOpts.CancelOperation = append(callOpts.CancelOperation, gax.WithClientMetrics(metrics))
+		callOpts.DeleteOperation = append(callOpts.DeleteOperation, gax.WithClientMetrics(metrics))
+		callOpts.GetOperation = append(callOpts.GetOperation, gax.WithClientMetrics(metrics))
+		callOpts.ListOperations = append(callOpts.ListOperations, gax.WithClientMetrics(metrics))
+	}
 
 	lroOpts := []option.ClientOption{
 		option.WithHTTPClient(httpClient),
@@ -1087,6 +1214,12 @@ func (c *gRPCClient) CreateLake(ctx context.Context, req *dataplexpb.CreateLakeR
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/CreateLake")
+	}
 	opts = append((*c.CallOptions).CreateLake[0:len((*c.CallOptions).CreateLake):len((*c.CallOptions).CreateLake)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1107,6 +1240,9 @@ func (c *gRPCClient) UpdateLake(ctx context.Context, req *dataplexpb.UpdateLakeR
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/UpdateLake")
+	}
 	opts = append((*c.CallOptions).UpdateLake[0:len((*c.CallOptions).UpdateLake):len((*c.CallOptions).UpdateLake)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1127,6 +1263,12 @@ func (c *gRPCClient) DeleteLake(ctx context.Context, req *dataplexpb.DeleteLakeR
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/DeleteLake")
+	}
 	opts = append((*c.CallOptions).DeleteLake[0:len((*c.CallOptions).DeleteLake):len((*c.CallOptions).DeleteLake)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1147,9 +1289,15 @@ func (c *gRPCClient) ListLakes(ctx context.Context, req *dataplexpb.ListLakesReq
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/ListLakes")
+	}
 	opts = append((*c.CallOptions).ListLakes[0:len((*c.CallOptions).ListLakes):len((*c.CallOptions).ListLakes)], opts...)
 	it := &LakeIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListLakesRequest)
+	req = proto.CloneOf(req)
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Lake, string, error) {
 		resp := &dataplexpb.ListLakesResponse{}
 		if pageToken != "" {
@@ -1193,6 +1341,12 @@ func (c *gRPCClient) GetLake(ctx context.Context, req *dataplexpb.GetLakeRequest
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/GetLake")
+	}
 	opts = append((*c.CallOptions).GetLake[0:len((*c.CallOptions).GetLake):len((*c.CallOptions).GetLake)], opts...)
 	var resp *dataplexpb.Lake
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1211,9 +1365,15 @@ func (c *gRPCClient) ListLakeActions(ctx context.Context, req *dataplexpb.ListLa
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/ListLakeActions")
+	}
 	opts = append((*c.CallOptions).ListLakeActions[0:len((*c.CallOptions).ListLakeActions):len((*c.CallOptions).ListLakeActions)], opts...)
 	it := &ActionIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListLakeActionsRequest)
+	req = proto.CloneOf(req)
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Action, string, error) {
 		resp := &dataplexpb.ListActionsResponse{}
 		if pageToken != "" {
@@ -1257,6 +1417,12 @@ func (c *gRPCClient) CreateZone(ctx context.Context, req *dataplexpb.CreateZoneR
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/CreateZone")
+	}
 	opts = append((*c.CallOptions).CreateZone[0:len((*c.CallOptions).CreateZone):len((*c.CallOptions).CreateZone)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1277,6 +1443,9 @@ func (c *gRPCClient) UpdateZone(ctx context.Context, req *dataplexpb.UpdateZoneR
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/UpdateZone")
+	}
 	opts = append((*c.CallOptions).UpdateZone[0:len((*c.CallOptions).UpdateZone):len((*c.CallOptions).UpdateZone)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1297,6 +1466,12 @@ func (c *gRPCClient) DeleteZone(ctx context.Context, req *dataplexpb.DeleteZoneR
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/DeleteZone")
+	}
 	opts = append((*c.CallOptions).DeleteZone[0:len((*c.CallOptions).DeleteZone):len((*c.CallOptions).DeleteZone)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1317,9 +1492,15 @@ func (c *gRPCClient) ListZones(ctx context.Context, req *dataplexpb.ListZonesReq
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/ListZones")
+	}
 	opts = append((*c.CallOptions).ListZones[0:len((*c.CallOptions).ListZones):len((*c.CallOptions).ListZones)], opts...)
 	it := &ZoneIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListZonesRequest)
+	req = proto.CloneOf(req)
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Zone, string, error) {
 		resp := &dataplexpb.ListZonesResponse{}
 		if pageToken != "" {
@@ -1363,6 +1544,12 @@ func (c *gRPCClient) GetZone(ctx context.Context, req *dataplexpb.GetZoneRequest
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/GetZone")
+	}
 	opts = append((*c.CallOptions).GetZone[0:len((*c.CallOptions).GetZone):len((*c.CallOptions).GetZone)], opts...)
 	var resp *dataplexpb.Zone
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1381,9 +1568,15 @@ func (c *gRPCClient) ListZoneActions(ctx context.Context, req *dataplexpb.ListZo
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/ListZoneActions")
+	}
 	opts = append((*c.CallOptions).ListZoneActions[0:len((*c.CallOptions).ListZoneActions):len((*c.CallOptions).ListZoneActions)], opts...)
 	it := &ActionIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListZoneActionsRequest)
+	req = proto.CloneOf(req)
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Action, string, error) {
 		resp := &dataplexpb.ListActionsResponse{}
 		if pageToken != "" {
@@ -1427,6 +1620,12 @@ func (c *gRPCClient) CreateAsset(ctx context.Context, req *dataplexpb.CreateAsse
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/CreateAsset")
+	}
 	opts = append((*c.CallOptions).CreateAsset[0:len((*c.CallOptions).CreateAsset):len((*c.CallOptions).CreateAsset)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1447,6 +1646,9 @@ func (c *gRPCClient) UpdateAsset(ctx context.Context, req *dataplexpb.UpdateAsse
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/UpdateAsset")
+	}
 	opts = append((*c.CallOptions).UpdateAsset[0:len((*c.CallOptions).UpdateAsset):len((*c.CallOptions).UpdateAsset)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1467,6 +1669,12 @@ func (c *gRPCClient) DeleteAsset(ctx context.Context, req *dataplexpb.DeleteAsse
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/DeleteAsset")
+	}
 	opts = append((*c.CallOptions).DeleteAsset[0:len((*c.CallOptions).DeleteAsset):len((*c.CallOptions).DeleteAsset)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1487,9 +1695,15 @@ func (c *gRPCClient) ListAssets(ctx context.Context, req *dataplexpb.ListAssetsR
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/ListAssets")
+	}
 	opts = append((*c.CallOptions).ListAssets[0:len((*c.CallOptions).ListAssets):len((*c.CallOptions).ListAssets)], opts...)
 	it := &AssetIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListAssetsRequest)
+	req = proto.CloneOf(req)
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Asset, string, error) {
 		resp := &dataplexpb.ListAssetsResponse{}
 		if pageToken != "" {
@@ -1533,6 +1747,12 @@ func (c *gRPCClient) GetAsset(ctx context.Context, req *dataplexpb.GetAssetReque
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/GetAsset")
+	}
 	opts = append((*c.CallOptions).GetAsset[0:len((*c.CallOptions).GetAsset):len((*c.CallOptions).GetAsset)], opts...)
 	var resp *dataplexpb.Asset
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1551,9 +1771,15 @@ func (c *gRPCClient) ListAssetActions(ctx context.Context, req *dataplexpb.ListA
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/ListAssetActions")
+	}
 	opts = append((*c.CallOptions).ListAssetActions[0:len((*c.CallOptions).ListAssetActions):len((*c.CallOptions).ListAssetActions)], opts...)
 	it := &ActionIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListAssetActionsRequest)
+	req = proto.CloneOf(req)
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Action, string, error) {
 		resp := &dataplexpb.ListActionsResponse{}
 		if pageToken != "" {
@@ -1597,6 +1823,12 @@ func (c *gRPCClient) CreateTask(ctx context.Context, req *dataplexpb.CreateTaskR
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/CreateTask")
+	}
 	opts = append((*c.CallOptions).CreateTask[0:len((*c.CallOptions).CreateTask):len((*c.CallOptions).CreateTask)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1617,6 +1849,9 @@ func (c *gRPCClient) UpdateTask(ctx context.Context, req *dataplexpb.UpdateTaskR
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/UpdateTask")
+	}
 	opts = append((*c.CallOptions).UpdateTask[0:len((*c.CallOptions).UpdateTask):len((*c.CallOptions).UpdateTask)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1637,6 +1872,12 @@ func (c *gRPCClient) DeleteTask(ctx context.Context, req *dataplexpb.DeleteTaskR
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/DeleteTask")
+	}
 	opts = append((*c.CallOptions).DeleteTask[0:len((*c.CallOptions).DeleteTask):len((*c.CallOptions).DeleteTask)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1657,9 +1898,15 @@ func (c *gRPCClient) ListTasks(ctx context.Context, req *dataplexpb.ListTasksReq
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/ListTasks")
+	}
 	opts = append((*c.CallOptions).ListTasks[0:len((*c.CallOptions).ListTasks):len((*c.CallOptions).ListTasks)], opts...)
 	it := &TaskIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListTasksRequest)
+	req = proto.CloneOf(req)
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Task, string, error) {
 		resp := &dataplexpb.ListTasksResponse{}
 		if pageToken != "" {
@@ -1703,6 +1950,12 @@ func (c *gRPCClient) GetTask(ctx context.Context, req *dataplexpb.GetTaskRequest
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/GetTask")
+	}
 	opts = append((*c.CallOptions).GetTask[0:len((*c.CallOptions).GetTask):len((*c.CallOptions).GetTask)], opts...)
 	var resp *dataplexpb.Task
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1721,9 +1974,15 @@ func (c *gRPCClient) ListJobs(ctx context.Context, req *dataplexpb.ListJobsReque
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/ListJobs")
+	}
 	opts = append((*c.CallOptions).ListJobs[0:len((*c.CallOptions).ListJobs):len((*c.CallOptions).ListJobs)], opts...)
 	it := &JobIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListJobsRequest)
+	req = proto.CloneOf(req)
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Job, string, error) {
 		resp := &dataplexpb.ListJobsResponse{}
 		if pageToken != "" {
@@ -1767,6 +2026,12 @@ func (c *gRPCClient) RunTask(ctx context.Context, req *dataplexpb.RunTaskRequest
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/RunTask")
+	}
 	opts = append((*c.CallOptions).RunTask[0:len((*c.CallOptions).RunTask):len((*c.CallOptions).RunTask)], opts...)
 	var resp *dataplexpb.RunTaskResponse
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1785,6 +2050,12 @@ func (c *gRPCClient) GetJob(ctx context.Context, req *dataplexpb.GetJobRequest, 
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/GetJob")
+	}
 	opts = append((*c.CallOptions).GetJob[0:len((*c.CallOptions).GetJob):len((*c.CallOptions).GetJob)], opts...)
 	var resp *dataplexpb.Job
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1803,6 +2074,12 @@ func (c *gRPCClient) CancelJob(ctx context.Context, req *dataplexpb.CancelJobReq
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/CancelJob")
+	}
 	opts = append((*c.CallOptions).CancelJob[0:len((*c.CallOptions).CancelJob):len((*c.CallOptions).CancelJob)], opts...)
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
 		var err error
@@ -1817,6 +2094,9 @@ func (c *gRPCClient) GetLocation(ctx context.Context, req *locationpb.GetLocatio
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.location.Locations/GetLocation")
+	}
 	opts = append((*c.CallOptions).GetLocation[0:len((*c.CallOptions).GetLocation):len((*c.CallOptions).GetLocation)], opts...)
 	var resp *locationpb.Location
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1835,9 +2115,12 @@ func (c *gRPCClient) ListLocations(ctx context.Context, req *locationpb.ListLoca
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.location.Locations/ListLocations")
+	}
 	opts = append((*c.CallOptions).ListLocations[0:len((*c.CallOptions).ListLocations):len((*c.CallOptions).ListLocations)], opts...)
 	it := &LocationIterator{}
-	req = proto.Clone(req).(*locationpb.ListLocationsRequest)
+	req = proto.CloneOf(req)
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*locationpb.Location, string, error) {
 		resp := &locationpb.ListLocationsResponse{}
 		if pageToken != "" {
@@ -1881,6 +2164,12 @@ func (c *gRPCClient) GetIamPolicy(ctx context.Context, req *iampb.GetIamPolicyRe
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//iam-meta-api.googleapis.com/%v", req.GetResource()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.iam.v1.IAMPolicy/GetIamPolicy")
+	}
 	opts = append((*c.CallOptions).GetIamPolicy[0:len((*c.CallOptions).GetIamPolicy):len((*c.CallOptions).GetIamPolicy)], opts...)
 	var resp *iampb.Policy
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1899,6 +2188,12 @@ func (c *gRPCClient) SetIamPolicy(ctx context.Context, req *iampb.SetIamPolicyRe
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//iam-meta-api.googleapis.com/%v", req.GetResource()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.iam.v1.IAMPolicy/SetIamPolicy")
+	}
 	opts = append((*c.CallOptions).SetIamPolicy[0:len((*c.CallOptions).SetIamPolicy):len((*c.CallOptions).SetIamPolicy)], opts...)
 	var resp *iampb.Policy
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1917,6 +2212,12 @@ func (c *gRPCClient) TestIamPermissions(ctx context.Context, req *iampb.TestIamP
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//iam-meta-api.googleapis.com/%v", req.GetResource()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.iam.v1.IAMPolicy/TestIamPermissions")
+	}
 	opts = append((*c.CallOptions).TestIamPermissions[0:len((*c.CallOptions).TestIamPermissions):len((*c.CallOptions).TestIamPermissions)], opts...)
 	var resp *iampb.TestIamPermissionsResponse
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1935,6 +2236,9 @@ func (c *gRPCClient) CancelOperation(ctx context.Context, req *longrunningpb.Can
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.longrunning.Operations/CancelOperation")
+	}
 	opts = append((*c.CallOptions).CancelOperation[0:len((*c.CallOptions).CancelOperation):len((*c.CallOptions).CancelOperation)], opts...)
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
 		var err error
@@ -1949,6 +2253,9 @@ func (c *gRPCClient) DeleteOperation(ctx context.Context, req *longrunningpb.Del
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.longrunning.Operations/DeleteOperation")
+	}
 	opts = append((*c.CallOptions).DeleteOperation[0:len((*c.CallOptions).DeleteOperation):len((*c.CallOptions).DeleteOperation)], opts...)
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
 		var err error
@@ -1963,6 +2270,9 @@ func (c *gRPCClient) GetOperation(ctx context.Context, req *longrunningpb.GetOpe
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.longrunning.Operations/GetOperation")
+	}
 	opts = append((*c.CallOptions).GetOperation[0:len((*c.CallOptions).GetOperation):len((*c.CallOptions).GetOperation)], opts...)
 	var resp *longrunningpb.Operation
 	err := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -1981,9 +2291,12 @@ func (c *gRPCClient) ListOperations(ctx context.Context, req *longrunningpb.List
 
 	hds = append(c.xGoogHeaders, hds...)
 	ctx = gax.InsertMetadataIntoOutgoingContext(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.longrunning.Operations/ListOperations")
+	}
 	opts = append((*c.CallOptions).ListOperations[0:len((*c.CallOptions).ListOperations):len((*c.CallOptions).ListOperations)], opts...)
 	it := &OperationIterator{}
-	req = proto.Clone(req).(*longrunningpb.ListOperationsRequest)
+	req = proto.CloneOf(req)
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*longrunningpb.Operation, string, error) {
 		resp := &longrunningpb.ListOperationsResponse{}
 		if pageToken != "" {
@@ -2052,6 +2365,13 @@ func (c *restClient) CreateLake(ctx context.Context, req *dataplexpb.CreateLakeR
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/CreateLake")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{parent=projects/*/locations/*}/lakes")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -2122,6 +2442,10 @@ func (c *restClient) UpdateLake(ctx context.Context, req *dataplexpb.UpdateLakeR
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/UpdateLake")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{lake.name=projects/*/locations/*/lakes/*}")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -2176,6 +2500,13 @@ func (c *restClient) DeleteLake(ctx context.Context, req *dataplexpb.DeleteLakeR
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/DeleteLake")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/lakes/*}")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -2213,7 +2544,7 @@ func (c *restClient) DeleteLake(ctx context.Context, req *dataplexpb.DeleteLakeR
 // ListLakes lists lake resources in a project and location.
 func (c *restClient) ListLakes(ctx context.Context, req *dataplexpb.ListLakesRequest, opts ...gax.CallOption) *LakeIterator {
 	it := &LakeIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListLakesRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Lake, string, error) {
 		resp := &dataplexpb.ListLakesResponse{}
@@ -2313,6 +2644,13 @@ func (c *restClient) GetLake(ctx context.Context, req *dataplexpb.GetLakeRequest
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/GetLake")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/lakes/*}")
+	}
 	opts = append((*c.CallOptions).GetLake[0:len((*c.CallOptions).GetLake):len((*c.CallOptions).GetLake)], opts...)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &dataplexpb.Lake{}
@@ -2347,7 +2685,7 @@ func (c *restClient) GetLake(ctx context.Context, req *dataplexpb.GetLakeRequest
 // ListLakeActions lists action resources in a lake.
 func (c *restClient) ListLakeActions(ctx context.Context, req *dataplexpb.ListLakeActionsRequest, opts ...gax.CallOption) *ActionIterator {
 	it := &ActionIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListLakeActionsRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Action, string, error) {
 		resp := &dataplexpb.ListActionsResponse{}
@@ -2452,6 +2790,13 @@ func (c *restClient) CreateZone(ctx context.Context, req *dataplexpb.CreateZoneR
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/CreateZone")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{parent=projects/*/locations/*/lakes/*}/zones")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -2522,6 +2867,10 @@ func (c *restClient) UpdateZone(ctx context.Context, req *dataplexpb.UpdateZoneR
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/UpdateZone")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{zone.name=projects/*/locations/*/lakes/*/zones/*}")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -2576,6 +2925,13 @@ func (c *restClient) DeleteZone(ctx context.Context, req *dataplexpb.DeleteZoneR
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/DeleteZone")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/lakes/*/zones/*}")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -2613,7 +2969,7 @@ func (c *restClient) DeleteZone(ctx context.Context, req *dataplexpb.DeleteZoneR
 // ListZones lists zone resources in a lake.
 func (c *restClient) ListZones(ctx context.Context, req *dataplexpb.ListZonesRequest, opts ...gax.CallOption) *ZoneIterator {
 	it := &ZoneIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListZonesRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Zone, string, error) {
 		resp := &dataplexpb.ListZonesResponse{}
@@ -2713,6 +3069,13 @@ func (c *restClient) GetZone(ctx context.Context, req *dataplexpb.GetZoneRequest
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/GetZone")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/lakes/*/zones/*}")
+	}
 	opts = append((*c.CallOptions).GetZone[0:len((*c.CallOptions).GetZone):len((*c.CallOptions).GetZone)], opts...)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &dataplexpb.Zone{}
@@ -2747,7 +3110,7 @@ func (c *restClient) GetZone(ctx context.Context, req *dataplexpb.GetZoneRequest
 // ListZoneActions lists action resources in a zone.
 func (c *restClient) ListZoneActions(ctx context.Context, req *dataplexpb.ListZoneActionsRequest, opts ...gax.CallOption) *ActionIterator {
 	it := &ActionIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListZoneActionsRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Action, string, error) {
 		resp := &dataplexpb.ListActionsResponse{}
@@ -2852,6 +3215,13 @@ func (c *restClient) CreateAsset(ctx context.Context, req *dataplexpb.CreateAsse
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/CreateAsset")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{parent=projects/*/locations/*/lakes/*/zones/*}/assets")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -2922,6 +3292,10 @@ func (c *restClient) UpdateAsset(ctx context.Context, req *dataplexpb.UpdateAsse
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/UpdateAsset")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{asset.name=projects/*/locations/*/lakes/*/zones/*/assets/*}")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -2976,6 +3350,13 @@ func (c *restClient) DeleteAsset(ctx context.Context, req *dataplexpb.DeleteAsse
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/DeleteAsset")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/lakes/*/zones/*/assets/*}")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -3013,7 +3394,7 @@ func (c *restClient) DeleteAsset(ctx context.Context, req *dataplexpb.DeleteAsse
 // ListAssets lists asset resources in a zone.
 func (c *restClient) ListAssets(ctx context.Context, req *dataplexpb.ListAssetsRequest, opts ...gax.CallOption) *AssetIterator {
 	it := &AssetIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListAssetsRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Asset, string, error) {
 		resp := &dataplexpb.ListAssetsResponse{}
@@ -3113,6 +3494,13 @@ func (c *restClient) GetAsset(ctx context.Context, req *dataplexpb.GetAssetReque
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/GetAsset")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/lakes/*/zones/*/assets/*}")
+	}
 	opts = append((*c.CallOptions).GetAsset[0:len((*c.CallOptions).GetAsset):len((*c.CallOptions).GetAsset)], opts...)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &dataplexpb.Asset{}
@@ -3147,7 +3535,7 @@ func (c *restClient) GetAsset(ctx context.Context, req *dataplexpb.GetAssetReque
 // ListAssetActions lists action resources in an asset.
 func (c *restClient) ListAssetActions(ctx context.Context, req *dataplexpb.ListAssetActionsRequest, opts ...gax.CallOption) *ActionIterator {
 	it := &ActionIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListAssetActionsRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Action, string, error) {
 		resp := &dataplexpb.ListActionsResponse{}
@@ -3252,6 +3640,13 @@ func (c *restClient) CreateTask(ctx context.Context, req *dataplexpb.CreateTaskR
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetParent()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/CreateTask")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{parent=projects/*/locations/*/lakes/*}/tasks")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -3322,6 +3717,10 @@ func (c *restClient) UpdateTask(ctx context.Context, req *dataplexpb.UpdateTaskR
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/UpdateTask")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{task.name=projects/*/locations/*/lakes/*/tasks/*}")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -3375,6 +3774,13 @@ func (c *restClient) DeleteTask(ctx context.Context, req *dataplexpb.DeleteTaskR
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/DeleteTask")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/lakes/*/tasks/*}")
+	}
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
 	e := gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
@@ -3412,7 +3818,7 @@ func (c *restClient) DeleteTask(ctx context.Context, req *dataplexpb.DeleteTaskR
 // ListTasks lists tasks under the given lake.
 func (c *restClient) ListTasks(ctx context.Context, req *dataplexpb.ListTasksRequest, opts ...gax.CallOption) *TaskIterator {
 	it := &TaskIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListTasksRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Task, string, error) {
 		resp := &dataplexpb.ListTasksResponse{}
@@ -3512,6 +3918,13 @@ func (c *restClient) GetTask(ctx context.Context, req *dataplexpb.GetTaskRequest
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/GetTask")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/lakes/*/tasks/*}")
+	}
 	opts = append((*c.CallOptions).GetTask[0:len((*c.CallOptions).GetTask):len((*c.CallOptions).GetTask)], opts...)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &dataplexpb.Task{}
@@ -3546,7 +3959,7 @@ func (c *restClient) GetTask(ctx context.Context, req *dataplexpb.GetTaskRequest
 // ListJobs lists Jobs under the given task.
 func (c *restClient) ListJobs(ctx context.Context, req *dataplexpb.ListJobsRequest, opts ...gax.CallOption) *JobIterator {
 	it := &JobIterator{}
-	req = proto.Clone(req).(*dataplexpb.ListJobsRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*dataplexpb.Job, string, error) {
 		resp := &dataplexpb.ListJobsResponse{}
@@ -3646,6 +4059,13 @@ func (c *restClient) RunTask(ctx context.Context, req *dataplexpb.RunTaskRequest
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/RunTask")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/lakes/*/tasks/*}:run")
+	}
 	opts = append((*c.CallOptions).RunTask[0:len((*c.CallOptions).RunTask):len((*c.CallOptions).RunTask)], opts...)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &dataplexpb.RunTaskResponse{}
@@ -3696,6 +4116,13 @@ func (c *restClient) GetJob(ctx context.Context, req *dataplexpb.GetJobRequest, 
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/GetJob")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/lakes/*/tasks/*/jobs/*}")
+	}
 	opts = append((*c.CallOptions).GetJob[0:len((*c.CallOptions).GetJob):len((*c.CallOptions).GetJob)], opts...)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &dataplexpb.Job{}
@@ -3752,6 +4179,13 @@ func (c *restClient) CancelJob(ctx context.Context, req *dataplexpb.CancelJobReq
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//dataplex.googleapis.com/%v", req.GetName()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.dataplex.v1.DataplexService/CancelJob")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/lakes/*/tasks/*/jobs/*}:cancel")
+	}
 	return gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
 		if settings.Path != "" {
 			baseUrl.Path = settings.Path
@@ -3787,6 +4221,10 @@ func (c *restClient) GetLocation(ctx context.Context, req *locationpb.GetLocatio
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.cloud.location.Locations/GetLocation")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*}")
+	}
 	opts = append((*c.CallOptions).GetLocation[0:len((*c.CallOptions).GetLocation):len((*c.CallOptions).GetLocation)], opts...)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &locationpb.Location{}
@@ -3819,17 +4257,24 @@ func (c *restClient) GetLocation(ctx context.Context, req *locationpb.GetLocatio
 }
 
 // ListLocations lists information about the supported locations for this service.
-// This method can be called in two ways:
 //
-//	List all public locations: Use the path GET /v1/locations.
+// This method lists locations based on the resource scope provided in
+// the [ListLocationsRequest.name (at http://ListLocationsRequest.name)][google.cloud.location.ListLocationsRequest.name (at http://google.cloud.location.ListLocationsRequest.name)] field: *
+// Global locations: If name is empty, the method lists the
+// public locations available to all projects. * Project-specific
+// locations: If name follows the format
+// projects/{project}, the method lists locations visible to that
+// specific project. This includes public, private, or other
+// project-specific locations enabled for the project.
 //
-//	List project-visible locations: Use the path
-//	GET /v1/projects/{project_id}/locations. This may include public
-//	locations as well as private or other locations specifically visible
-//	to the project.
+// For gRPC and client library implementations, the resource name is
+// passed as the name field. For direct service calls, the resource
+// name is
+// incorporated into the request path based on the specific service
+// implementation and version.
 func (c *restClient) ListLocations(ctx context.Context, req *locationpb.ListLocationsRequest, opts ...gax.CallOption) *LocationIterator {
 	it := &LocationIterator{}
-	req = proto.Clone(req).(*locationpb.ListLocationsRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*locationpb.Location, string, error) {
 		resp := &locationpb.ListLocationsResponse{}
@@ -3930,6 +4375,13 @@ func (c *restClient) GetIamPolicy(ctx context.Context, req *iampb.GetIamPolicyRe
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//iam-meta-api.googleapis.com/%v", req.GetResource()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.iam.v1.IAMPolicy/GetIamPolicy")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{resource=projects/*/locations/*/lakes/*}:getIamPolicy")
+	}
 	opts = append((*c.CallOptions).GetIamPolicy[0:len((*c.CallOptions).GetIamPolicy):len((*c.CallOptions).GetIamPolicy)], opts...)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &iampb.Policy{}
@@ -3990,6 +4442,13 @@ func (c *restClient) SetIamPolicy(ctx context.Context, req *iampb.SetIamPolicyRe
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//iam-meta-api.googleapis.com/%v", req.GetResource()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.iam.v1.IAMPolicy/SetIamPolicy")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{resource=projects/*/locations/*/lakes/*}:setIamPolicy")
+	}
 	opts = append((*c.CallOptions).SetIamPolicy[0:len((*c.CallOptions).SetIamPolicy):len((*c.CallOptions).SetIamPolicy)], opts...)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &iampb.Policy{}
@@ -4052,6 +4511,13 @@ func (c *restClient) TestIamPermissions(ctx context.Context, req *iampb.TestIamP
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "resource_name", fmt.Sprintf("//iam-meta-api.googleapis.com/%v", req.GetResource()))
+	}
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.iam.v1.IAMPolicy/TestIamPermissions")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{resource=projects/*/locations/*/lakes/*}:testIamPermissions")
+	}
 	opts = append((*c.CallOptions).TestIamPermissions[0:len((*c.CallOptions).TestIamPermissions):len((*c.CallOptions).TestIamPermissions)], opts...)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &iampb.TestIamPermissionsResponse{}
@@ -4108,6 +4574,10 @@ func (c *restClient) CancelOperation(ctx context.Context, req *longrunningpb.Can
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.longrunning.Operations/CancelOperation")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/operations/*}:cancel")
+	}
 	return gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
 		if settings.Path != "" {
 			baseUrl.Path = settings.Path
@@ -4143,6 +4613,10 @@ func (c *restClient) DeleteOperation(ctx context.Context, req *longrunningpb.Del
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.longrunning.Operations/DeleteOperation")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/operations/*}")
+	}
 	return gax.Invoke(ctx, func(ctx context.Context, settings gax.CallSettings) error {
 		if settings.Path != "" {
 			baseUrl.Path = settings.Path
@@ -4178,6 +4652,10 @@ func (c *restClient) GetOperation(ctx context.Context, req *longrunningpb.GetOpe
 	hds = append(c.xGoogHeaders, hds...)
 	hds = append(hds, "Content-Type", "application/json")
 	headers := gax.BuildHeaders(ctx, hds...)
+	if gax.IsFeatureEnabled("METRICS") || gax.IsFeatureEnabled("TRACING") || gax.IsFeatureEnabled("LOGGING") {
+		ctx = callctx.WithTelemetryContext(ctx, "rpc_method", "google.longrunning.Operations/GetOperation")
+		ctx = callctx.WithTelemetryContext(ctx, "url_template", "/v1/{name=projects/*/locations/*/operations/*}")
+	}
 	opts = append((*c.CallOptions).GetOperation[0:len((*c.CallOptions).GetOperation):len((*c.CallOptions).GetOperation)], opts...)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	resp := &longrunningpb.Operation{}
@@ -4212,7 +4690,7 @@ func (c *restClient) GetOperation(ctx context.Context, req *longrunningpb.GetOpe
 // ListOperations is a utility method from google.longrunning.Operations.
 func (c *restClient) ListOperations(ctx context.Context, req *longrunningpb.ListOperationsRequest, opts ...gax.CallOption) *OperationIterator {
 	it := &OperationIterator{}
-	req = proto.Clone(req).(*longrunningpb.ListOperationsRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*longrunningpb.Operation, string, error) {
 		resp := &longrunningpb.ListOperationsResponse{}

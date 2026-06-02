@@ -1076,6 +1076,9 @@ func (c *regionInstanceGroupManagersRESTClient) Delete(ctx context.Context, req 
 	baseUrl.Path += fmt.Sprintf("/compute/beta/projects/%v/regions/%v/instanceGroupManagers/%v", req.GetProject(), req.GetRegion(), req.GetInstanceGroupManager())
 
 	params := url.Values{}
+	if req != nil && req.NoGracefulShutdown != nil {
+		params.Add("noGracefulShutdown", fmt.Sprintf("%v", req.GetNoGracefulShutdown()))
+	}
 	if req != nil && req.RequestId != nil {
 		params.Add("requestId", fmt.Sprintf("%v", req.GetRequestId()))
 	}
@@ -1164,6 +1167,9 @@ func (c *regionInstanceGroupManagersRESTClient) DeleteInstances(ctx context.Cont
 	baseUrl.Path += fmt.Sprintf("/compute/beta/projects/%v/regions/%v/instanceGroupManagers/%v/deleteInstances", req.GetProject(), req.GetRegion(), req.GetInstanceGroupManager())
 
 	params := url.Values{}
+	if req != nil && req.NoGracefulShutdown != nil {
+		params.Add("noGracefulShutdown", fmt.Sprintf("%v", req.GetNoGracefulShutdown()))
+	}
 	if req != nil && req.RequestId != nil {
 		params.Add("requestId", fmt.Sprintf("%v", req.GetRequestId()))
 	}
@@ -1428,7 +1434,7 @@ func (c *regionInstanceGroupManagersRESTClient) Insert(ctx context.Context, req 
 // within the specified region.
 func (c *regionInstanceGroupManagersRESTClient) List(ctx context.Context, req *computepb.ListRegionInstanceGroupManagersRequest, opts ...gax.CallOption) *InstanceGroupManagerIterator {
 	it := &InstanceGroupManagerIterator{}
-	req = proto.Clone(req).(*computepb.ListRegionInstanceGroupManagersRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*computepb.InstanceGroupManager, string, error) {
 		resp := &computepb.RegionInstanceGroupManagerList{}
@@ -1515,7 +1521,7 @@ func (c *regionInstanceGroupManagersRESTClient) List(ctx context.Context, req *c
 // managed instance group. The filter andorderBy query parameters are not supported.
 func (c *regionInstanceGroupManagersRESTClient) ListErrors(ctx context.Context, req *computepb.ListErrorsRegionInstanceGroupManagersRequest, opts ...gax.CallOption) *InstanceManagedByIgmErrorIterator {
 	it := &InstanceManagedByIgmErrorIterator{}
-	req = proto.Clone(req).(*computepb.ListErrorsRegionInstanceGroupManagersRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*computepb.InstanceManagedByIgmError, string, error) {
 		resp := &computepb.RegionInstanceGroupManagersListErrorsResponse{}
@@ -1606,7 +1612,7 @@ func (c *regionInstanceGroupManagersRESTClient) ListErrors(ctx context.Context, 
 // to PAGINATED.
 func (c *regionInstanceGroupManagersRESTClient) ListManagedInstances(ctx context.Context, req *computepb.ListManagedInstancesRegionInstanceGroupManagersRequest, opts ...gax.CallOption) *ManagedInstanceIterator {
 	it := &ManagedInstanceIterator{}
-	req = proto.Clone(req).(*computepb.ListManagedInstancesRegionInstanceGroupManagersRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*computepb.ManagedInstance, string, error) {
 		resp := &computepb.RegionInstanceGroupManagersListInstancesResponse{}
@@ -1693,7 +1699,7 @@ func (c *regionInstanceGroupManagersRESTClient) ListManagedInstances(ctx context
 // instance group. The orderBy query parameter is not supported.
 func (c *regionInstanceGroupManagersRESTClient) ListPerInstanceConfigs(ctx context.Context, req *computepb.ListPerInstanceConfigsRegionInstanceGroupManagersRequest, opts ...gax.CallOption) *PerInstanceConfigIterator {
 	it := &PerInstanceConfigIterator{}
-	req = proto.Clone(req).(*computepb.ListPerInstanceConfigsRegionInstanceGroupManagersRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*computepb.PerInstanceConfig, string, error) {
 		resp := &computepb.RegionInstanceGroupManagersListInstanceConfigsResp{}
@@ -1968,6 +1974,9 @@ func (c *regionInstanceGroupManagersRESTClient) RecreateInstances(ctx context.Co
 	baseUrl.Path += fmt.Sprintf("/compute/beta/projects/%v/regions/%v/instanceGroupManagers/%v/recreateInstances", req.GetProject(), req.GetRegion(), req.GetInstanceGroupManager())
 
 	params := url.Values{}
+	if req != nil && req.NoGracefulShutdown != nil {
+		params.Add("noGracefulShutdown", fmt.Sprintf("%v", req.GetNoGracefulShutdown()))
+	}
 	if req != nil && req.RequestId != nil {
 		params.Add("requestId", fmt.Sprintf("%v", req.GetRequestId()))
 	}
@@ -2639,6 +2648,9 @@ func (c *regionInstanceGroupManagersRESTClient) StopInstances(ctx context.Contex
 	baseUrl.Path += fmt.Sprintf("/compute/beta/projects/%v/regions/%v/instanceGroupManagers/%v/stopInstances", req.GetProject(), req.GetRegion(), req.GetInstanceGroupManager())
 
 	params := url.Values{}
+	if req != nil && req.NoGracefulShutdown != nil {
+		params.Add("noGracefulShutdown", fmt.Sprintf("%v", req.GetNoGracefulShutdown()))
+	}
 	if req != nil && req.RequestId != nil {
 		params.Add("requestId", fmt.Sprintf("%v", req.GetRequestId()))
 	}

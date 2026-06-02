@@ -1,6 +1,14 @@
 # Changes
 
 
+## [1.15.0](https://github.com/googleapis/google-cloud-go/releases/tag/vmmigration%2Fv1.15.0) (2026-05-07)
+
+## [1.14.0](https://github.com/googleapis/google-cloud-go/releases/tag/vmmigration%2Fv1.14.0) (2026-04-30)
+
+## [1.13.0](https://github.com/googleapis/google-cloud-go/releases/tag/vmmigration%2Fv1.13.0) (2026-04-13)
+
+## [1.12.0](https://github.com/googleapis/google-cloud-go/releases/tag/vmmigration%2Fv1.12.0) (2026-04-09)
+
 ## [1.11.0](https://github.com/googleapis/google-cloud-go/releases/tag/vmmigration%2Fv1.11.0) (2026-04-02)
 
 ## [1.10.0](https://github.com/googleapis/google-cloud-go/releases/tag/vmmigration%2Fv1.10.0) (2025-12-04)

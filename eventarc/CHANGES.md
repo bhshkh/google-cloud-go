@@ -1,5 +1,13 @@
 # Changes
 
+## [1.23.0](https://github.com/googleapis/google-cloud-go/releases/tag/eventarc%2Fv1.23.0) (2026-05-07)
+
+## [1.22.0](https://github.com/googleapis/google-cloud-go/releases/tag/eventarc%2Fv1.22.0) (2026-04-30)
+
+## [1.21.0](https://github.com/googleapis/google-cloud-go/releases/tag/eventarc%2Fv1.21.0) (2026-04-13)
+
+## [1.20.0](https://github.com/googleapis/google-cloud-go/releases/tag/eventarc%2Fv1.20.0) (2026-04-09)
+
 ## [1.19.0](https://github.com/googleapis/google-cloud-go/releases/tag/eventarc%2Fv1.19.0) (2026-04-02)
 
 ## [1.18.0](https://github.com/googleapis/google-cloud-go/releases/tag/eventarc%2Fv1.18.0) (2025-12-04)

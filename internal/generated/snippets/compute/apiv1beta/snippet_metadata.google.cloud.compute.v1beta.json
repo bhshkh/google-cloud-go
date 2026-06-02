@@ -8,7 +8,7 @@
     ],
     "language": "GO",
     "name": "cloud.google.com/go/compute/apiv1beta",
-    "version": "1.58.0"
+    "version": "1.64.0"
   },
   "snippets": [
     {
@@ -562,6 +562,98 @@
         }
       ],
       "title": "compute CalendarMode Sample"
+    },
+    {
+      "clientMethod": {
+        "client": {
+          "fullName": "google.cloud.compute.v1beta.AdviceClient",
+          "shortName": "AdviceClient"
+        },
+        "fullName": "google.cloud.compute.v1beta.AdviceClient.Capacity",
+        "method": {
+          "fullName": "google.cloud.compute.v1beta.Advice.Capacity",
+          "service": {
+            "fullName": "google.cloud.compute.v1beta.Advice",
+            "shortName": "Advice"
+          },
+          "shortName": "Capacity"
+        },
+        "parameters": [
+          {
+            "name": "ctx",
+            "type": "context.Context"
+          },
+          {
+            "name": "req",
+            "type": "computepb.CapacityAdviceRpcRequest"
+          },
+          {
+            "name": "opts",
+            "type": "...gax.CallOption"
+          }
+        ],
+        "resultType": "*computepb.CapacityAdviceResponse",
+        "shortName": "Capacity"
+      },
+      "description": "Capacity advice on making real-time decisions (such as choosing zone or\nmachine types) during deployment to maximize your chances of obtaining\ncapacity.",
+      "file": "AdviceClient/Capacity/main.go",
+      "language": "GO",
+      "origin": "API_DEFINITION",
+      "regionTag": "compute_v1beta_generated_Advice_Capacity_sync",
+      "segments": [
+        {
+          "end": 53,
+          "start": 18,
+          "type": "FULL"
+        }
+      ],
+      "title": "compute Capacity Sample"
+    },
+    {
+      "clientMethod": {
+        "client": {
+          "fullName": "google.cloud.compute.v1beta.AdviceClient",
+          "shortName": "AdviceClient"
+        },
+        "fullName": "google.cloud.compute.v1beta.AdviceClient.CapacityHistory",
+        "method": {
+          "fullName": "google.cloud.compute.v1beta.Advice.CapacityHistory",
+          "service": {
+            "fullName": "google.cloud.compute.v1beta.Advice",
+            "shortName": "Advice"
+          },
+          "shortName": "CapacityHistory"
+        },
+        "parameters": [
+          {
+            "name": "ctx",
+            "type": "context.Context"
+          },
+          {
+            "name": "req",
+            "type": "computepb.CapacityHistoryAdviceRequest"
+          },
+          {
+            "name": "opts",
+            "type": "...gax.CallOption"
+          }
+        ],
+        "resultType": "*computepb.CapacityHistoryResponse",
+        "shortName": "CapacityHistory"
+      },
+      "description": "CapacityHistory gets the capacity history.",
+      "file": "AdviceClient/CapacityHistory/main.go",
+      "language": "GO",
+      "origin": "API_DEFINITION",
+      "regionTag": "compute_v1beta_generated_Advice_CapacityHistory_sync",
+      "segments": [
+        {
+          "end": 53,
+          "start": 18,
+          "type": "FULL"
+        }
+      ],
+      "title": "compute CapacityHistory Sample"
     },
     {
       "clientMethod": {
@@ -3690,6 +3782,52 @@
         }
       ],
       "title": "compute Update Sample"
+    },
+    {
+      "clientMethod": {
+        "client": {
+          "fullName": "google.cloud.compute.v1beta.DisksClient",
+          "shortName": "DisksClient"
+        },
+        "fullName": "google.cloud.compute.v1beta.DisksClient.UpdateKmsKey",
+        "method": {
+          "fullName": "google.cloud.compute.v1beta.Disks.UpdateKmsKey",
+          "service": {
+            "fullName": "google.cloud.compute.v1beta.Disks",
+            "shortName": "Disks"
+          },
+          "shortName": "UpdateKmsKey"
+        },
+        "parameters": [
+          {
+            "name": "ctx",
+            "type": "context.Context"
+          },
+          {
+            "name": "req",
+            "type": "computepb.UpdateKmsKeyDiskRequest"
+          },
+          {
+            "name": "opts",
+            "type": "...gax.CallOption"
+          }
+        ],
+        "resultType": "*Operation",
+        "shortName": "UpdateKmsKey"
+      },
+      "description": "UpdateKmsKey rotates the customer-managed\nencryption key to the latest version for the specified persistent disk.",
+      "file": "DisksClient/UpdateKmsKey/main.go",
+      "language": "GO",
+      "origin": "API_DEFINITION",
+      "regionTag": "compute_v1beta_generated_Disks_UpdateKmsKey_sync",
+      "segments": [
+        {
+          "end": 56,
+          "start": 18,
+          "type": "FULL"
+        }
+      ],
+      "title": "compute UpdateKmsKey Sample"
     },
     {
       "clientMethod": {
@@ -16577,6 +16715,98 @@
           "fullName": "google.cloud.compute.v1beta.LicenseCodesClient",
           "shortName": "LicenseCodesClient"
         },
+        "fullName": "google.cloud.compute.v1beta.LicenseCodesClient.GetIamPolicy",
+        "method": {
+          "fullName": "google.cloud.compute.v1beta.LicenseCodes.GetIamPolicy",
+          "service": {
+            "fullName": "google.cloud.compute.v1beta.LicenseCodes",
+            "shortName": "LicenseCodes"
+          },
+          "shortName": "GetIamPolicy"
+        },
+        "parameters": [
+          {
+            "name": "ctx",
+            "type": "context.Context"
+          },
+          {
+            "name": "req",
+            "type": "computepb.GetIamPolicyLicenseCodeRequest"
+          },
+          {
+            "name": "opts",
+            "type": "...gax.CallOption"
+          }
+        ],
+        "resultType": "*computepb.Policy",
+        "shortName": "GetIamPolicy"
+      },
+      "description": "GetIamPolicy gets the access control policy for a resource. May be empty if no such\npolicy or resource exists.\n*Caution* This resource is intended\nfor use only by third-party partners who are creatingCloud Marketplace\nimages.",
+      "file": "LicenseCodesClient/GetIamPolicy/main.go",
+      "language": "GO",
+      "origin": "API_DEFINITION",
+      "regionTag": "compute_v1beta_generated_LicenseCodes_GetIamPolicy_sync",
+      "segments": [
+        {
+          "end": 53,
+          "start": 18,
+          "type": "FULL"
+        }
+      ],
+      "title": "compute GetIamPolicy Sample"
+    },
+    {
+      "clientMethod": {
+        "client": {
+          "fullName": "google.cloud.compute.v1beta.LicenseCodesClient",
+          "shortName": "LicenseCodesClient"
+        },
+        "fullName": "google.cloud.compute.v1beta.LicenseCodesClient.SetIamPolicy",
+        "method": {
+          "fullName": "google.cloud.compute.v1beta.LicenseCodes.SetIamPolicy",
+          "service": {
+            "fullName": "google.cloud.compute.v1beta.LicenseCodes",
+            "shortName": "LicenseCodes"
+          },
+          "shortName": "SetIamPolicy"
+        },
+        "parameters": [
+          {
+            "name": "ctx",
+            "type": "context.Context"
+          },
+          {
+            "name": "req",
+            "type": "computepb.SetIamPolicyLicenseCodeRequest"
+          },
+          {
+            "name": "opts",
+            "type": "...gax.CallOption"
+          }
+        ],
+        "resultType": "*computepb.Policy",
+        "shortName": "SetIamPolicy"
+      },
+      "description": "SetIamPolicy sets the access control policy on the specified resource.\nReplaces any existing policy.\n*Caution* This resource is intended\nfor use only by third-party partners who are creatingCloud Marketplace\nimages.",
+      "file": "LicenseCodesClient/SetIamPolicy/main.go",
+      "language": "GO",
+      "origin": "API_DEFINITION",
+      "regionTag": "compute_v1beta_generated_LicenseCodes_SetIamPolicy_sync",
+      "segments": [
+        {
+          "end": 53,
+          "start": 18,
+          "type": "FULL"
+        }
+      ],
+      "title": "compute SetIamPolicy Sample"
+    },
+    {
+      "clientMethod": {
+        "client": {
+          "fullName": "google.cloud.compute.v1beta.LicenseCodesClient",
+          "shortName": "LicenseCodesClient"
+        },
         "fullName": "google.cloud.compute.v1beta.LicenseCodesClient.TestIamPermissions",
         "method": {
           "fullName": "google.cloud.compute.v1beta.LicenseCodes.TestIamPermissions",
@@ -25777,6 +26007,52 @@
           "fullName": "google.cloud.compute.v1beta.RegionCompositeHealthChecksClient",
           "shortName": "RegionCompositeHealthChecksClient"
         },
+        "fullName": "google.cloud.compute.v1beta.RegionCompositeHealthChecksClient.GetHealth",
+        "method": {
+          "fullName": "google.cloud.compute.v1beta.RegionCompositeHealthChecks.GetHealth",
+          "service": {
+            "fullName": "google.cloud.compute.v1beta.RegionCompositeHealthChecks",
+            "shortName": "RegionCompositeHealthChecks"
+          },
+          "shortName": "GetHealth"
+        },
+        "parameters": [
+          {
+            "name": "ctx",
+            "type": "context.Context"
+          },
+          {
+            "name": "req",
+            "type": "computepb.GetHealthRegionCompositeHealthCheckRequest"
+          },
+          {
+            "name": "opts",
+            "type": "...gax.CallOption"
+          }
+        ],
+        "resultType": "*computepb.CompositeHealthCheckHealth",
+        "shortName": "GetHealth"
+      },
+      "description": "GetHealth gets the most recent health check results for this\nregional CompositeHealthCheck.",
+      "file": "RegionCompositeHealthChecksClient/GetHealth/main.go",
+      "language": "GO",
+      "origin": "API_DEFINITION",
+      "regionTag": "compute_v1beta_generated_RegionCompositeHealthChecks_GetHealth_sync",
+      "segments": [
+        {
+          "end": 53,
+          "start": 18,
+          "type": "FULL"
+        }
+      ],
+      "title": "compute GetHealth Sample"
+    },
+    {
+      "clientMethod": {
+        "client": {
+          "fullName": "google.cloud.compute.v1beta.RegionCompositeHealthChecksClient",
+          "shortName": "RegionCompositeHealthChecksClient"
+        },
         "fullName": "google.cloud.compute.v1beta.RegionCompositeHealthChecksClient.Insert",
         "method": {
           "fullName": "google.cloud.compute.v1beta.RegionCompositeHealthChecks.Insert",
@@ -26924,6 +27200,52 @@
     {
       "clientMethod": {
         "client": {
+          "fullName": "google.cloud.compute.v1beta.RegionDisksClient",
+          "shortName": "RegionDisksClient"
+        },
+        "fullName": "google.cloud.compute.v1beta.RegionDisksClient.UpdateKmsKey",
+        "method": {
+          "fullName": "google.cloud.compute.v1beta.RegionDisks.UpdateKmsKey",
+          "service": {
+            "fullName": "google.cloud.compute.v1beta.RegionDisks",
+            "shortName": "RegionDisks"
+          },
+          "shortName": "UpdateKmsKey"
+        },
+        "parameters": [
+          {
+            "name": "ctx",
+            "type": "context.Context"
+          },
+          {
+            "name": "req",
+            "type": "computepb.UpdateKmsKeyRegionDiskRequest"
+          },
+          {
+            "name": "opts",
+            "type": "...gax.CallOption"
+          }
+        ],
+        "resultType": "*Operation",
+        "shortName": "UpdateKmsKey"
+      },
+      "description": "UpdateKmsKey rotates the customer-managed\nencryption key to the latest version for the specified persistent disk.",
+      "file": "RegionDisksClient/UpdateKmsKey/main.go",
+      "language": "GO",
+      "origin": "API_DEFINITION",
+      "regionTag": "compute_v1beta_generated_RegionDisks_UpdateKmsKey_sync",
+      "segments": [
+        {
+          "end": 56,
+          "start": 18,
+          "type": "FULL"
+        }
+      ],
+      "title": "compute UpdateKmsKey Sample"
+    },
+    {
+      "clientMethod": {
+        "client": {
           "fullName": "google.cloud.compute.v1beta.RegionHealthAggregationPoliciesClient",
           "shortName": "RegionHealthAggregationPoliciesClient"
         },
@@ -28024,6 +28346,52 @@
         }
       ],
       "title": "compute Get Sample"
+    },
+    {
+      "clientMethod": {
+        "client": {
+          "fullName": "google.cloud.compute.v1beta.RegionHealthSourcesClient",
+          "shortName": "RegionHealthSourcesClient"
+        },
+        "fullName": "google.cloud.compute.v1beta.RegionHealthSourcesClient.GetHealth",
+        "method": {
+          "fullName": "google.cloud.compute.v1beta.RegionHealthSources.GetHealth",
+          "service": {
+            "fullName": "google.cloud.compute.v1beta.RegionHealthSources",
+            "shortName": "RegionHealthSources"
+          },
+          "shortName": "GetHealth"
+        },
+        "parameters": [
+          {
+            "name": "ctx",
+            "type": "context.Context"
+          },
+          {
+            "name": "req",
+            "type": "computepb.GetHealthRegionHealthSourceRequest"
+          },
+          {
+            "name": "opts",
+            "type": "...gax.CallOption"
+          }
+        ],
+        "resultType": "*computepb.HealthSourceHealth",
+        "shortName": "GetHealth"
+      },
+      "description": "GetHealth gets the most recent health check results for this\nregional HealthSource.",
+      "file": "RegionHealthSourcesClient/GetHealth/main.go",
+      "language": "GO",
+      "origin": "API_DEFINITION",
+      "regionTag": "compute_v1beta_generated_RegionHealthSources_GetHealth_sync",
+      "segments": [
+        {
+          "end": 53,
+          "start": 18,
+          "type": "FULL"
+        }
+      ],
+      "title": "compute GetHealth Sample"
     },
     {
       "clientMethod": {
@@ -34280,6 +34648,52 @@
         }
       ],
       "title": "compute TestIamPermissions Sample"
+    },
+    {
+      "clientMethod": {
+        "client": {
+          "fullName": "google.cloud.compute.v1beta.RegionSnapshotsClient",
+          "shortName": "RegionSnapshotsClient"
+        },
+        "fullName": "google.cloud.compute.v1beta.RegionSnapshotsClient.UpdateKmsKey",
+        "method": {
+          "fullName": "google.cloud.compute.v1beta.RegionSnapshots.UpdateKmsKey",
+          "service": {
+            "fullName": "google.cloud.compute.v1beta.RegionSnapshots",
+            "shortName": "RegionSnapshots"
+          },
+          "shortName": "UpdateKmsKey"
+        },
+        "parameters": [
+          {
+            "name": "ctx",
+            "type": "context.Context"
+          },
+          {
+            "name": "req",
+            "type": "computepb.UpdateKmsKeyRegionSnapshotRequest"
+          },
+          {
+            "name": "opts",
+            "type": "...gax.CallOption"
+          }
+        ],
+        "resultType": "*Operation",
+        "shortName": "UpdateKmsKey"
+      },
+      "description": "UpdateKmsKey rotates the customer-managed\nencryption key to the latest version for the specified snapshot.",
+      "file": "RegionSnapshotsClient/UpdateKmsKey/main.go",
+      "language": "GO",
+      "origin": "API_DEFINITION",
+      "regionTag": "compute_v1beta_generated_RegionSnapshots_UpdateKmsKey_sync",
+      "segments": [
+        {
+          "end": 56,
+          "start": 18,
+          "type": "FULL"
+        }
+      ],
+      "title": "compute UpdateKmsKey Sample"
     },
     {
       "clientMethod": {
@@ -41506,6 +41920,52 @@
     {
       "clientMethod": {
         "client": {
+          "fullName": "google.cloud.compute.v1beta.SnapshotsClient",
+          "shortName": "SnapshotsClient"
+        },
+        "fullName": "google.cloud.compute.v1beta.SnapshotsClient.UpdateKmsKey",
+        "method": {
+          "fullName": "google.cloud.compute.v1beta.Snapshots.UpdateKmsKey",
+          "service": {
+            "fullName": "google.cloud.compute.v1beta.Snapshots",
+            "shortName": "Snapshots"
+          },
+          "shortName": "UpdateKmsKey"
+        },
+        "parameters": [
+          {
+            "name": "ctx",
+            "type": "context.Context"
+          },
+          {
+            "name": "req",
+            "type": "computepb.UpdateKmsKeySnapshotRequest"
+          },
+          {
+            "name": "opts",
+            "type": "...gax.CallOption"
+          }
+        ],
+        "resultType": "*Operation",
+        "shortName": "UpdateKmsKey"
+      },
+      "description": "UpdateKmsKey rotates the customer-managed\nencryption key to the latest version for the specified snapshot.",
+      "file": "SnapshotsClient/UpdateKmsKey/main.go",
+      "language": "GO",
+      "origin": "API_DEFINITION",
+      "regionTag": "compute_v1beta_generated_Snapshots_UpdateKmsKey_sync",
+      "segments": [
+        {
+          "end": 56,
+          "start": 18,
+          "type": "FULL"
+        }
+      ],
+      "title": "compute UpdateKmsKey Sample"
+    },
+    {
+      "clientMethod": {
+        "client": {
           "fullName": "google.cloud.compute.v1beta.SslCertificatesClient",
           "shortName": "SslCertificatesClient"
         },
@@ -48159,7 +48619,7 @@
         "resultType": "*Operation",
         "shortName": "Delete"
       },
-      "description": "Delete deletes a specified zone VM extension policy.",
+      "description": "Delete deletes a specified zone VM extension policy within a project.",
       "file": "ZoneVmExtensionPoliciesClient/Delete/main.go",
       "language": "GO",
       "origin": "API_DEFINITION",
@@ -48205,7 +48665,7 @@
         "resultType": "*computepb.VmExtensionPolicy",
         "shortName": "Get"
       },
-      "description": "Get retrieves details of a specific zone VM extension policy.",
+      "description": "Get retrieves details of a specific zone VM extension policy within a project.",
       "file": "ZoneVmExtensionPoliciesClient/Get/main.go",
       "language": "GO",
       "origin": "API_DEFINITION",
@@ -48343,7 +48803,7 @@
         "resultType": "*Operation",
         "shortName": "Update"
       },
-      "description": "Update modifies an existing zone VM extension policy.",
+      "description": "Update modifies an existing zone VM extension policy within a project.",
       "file": "ZoneVmExtensionPoliciesClient/Update/main.go",
       "language": "GO",
       "origin": "API_DEFINITION",

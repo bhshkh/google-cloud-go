@@ -1,9 +1,10 @@
 ---
 name: generation-check
 on:
-  schedule:
-    # Runs every day at 4:00 AM UTC
-    - cron: '0 4 * * *'
+  push:
+    branches:
+      - main
+  pull_request:
   # Allows manual triggering for debugging purpose.
   workflow_dispatch:
 permissions:
@@ -14,31 +15,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: dorny/paths-filter@v4
+        id: changes
         with:
-          go-version: '1.26.x'
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
+          filters: |
+            librarian:
+              - 'librarian.yaml'
+      # Version of librarian is pulled from librarian.yaml,
+      # main corresponds to the action's source definition.
+      - uses: googleapis/librarian@main
+        if: steps.changes.outputs.librarian == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         with:
-          version: "25.7"
+          protoc-version: '33.2'
+          protoc-checksum: '8c0a8577311720cc83488f813aeb5046d69cb9824cbf39cb7447e0c5132d677952d5bb7c1130d9df381835eee7352828878d409873ebb407d7a4649ea2a4aee5'
       - name: Install tools
-        run: |
-          version=$(sed -n 's/^version: *//p' librarian.yaml)
-          go run "github.com/googleapis/librarian/cmd/librarian@${version}" install
+        if: steps.changes.outputs.librarian == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        run: librarian install
       - name: Regenerate
+        if: steps.changes.outputs.librarian == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         run: |
-          version=$(sed -n 's/^version: *//p' librarian.yaml)
-          go run "github.com/googleapis/librarian/cmd/librarian@${version}" generate -all
+          librarian generate --all
+          git diff --exit-code
       - name: Create issue on diff
-        if: failure()
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -n "$(git status --porcelain)" ]; then
-            TITLE="Daily regeneration check found diff"
+            TITLE="Regeneration check found diff"
             RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             DIFF_STAT=$(git diff --stat)
-            BODY="The daily [regeneration check]($RUN_URL) found a diff.
+            BODY="The post-submit [regeneration check]($RUN_URL) found a diff.
 
             Diff summary:
             \`\`\`

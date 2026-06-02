@@ -353,7 +353,7 @@ func (c *forwardingRulesRESTClient) Connection() *grpc.ClientConn {
 // returnPartialSuccess parameter to true.
 func (c *forwardingRulesRESTClient) AggregatedList(ctx context.Context, req *computepb.AggregatedListForwardingRulesRequest, opts ...gax.CallOption) *ForwardingRulesScopedListPairIterator {
 	it := &ForwardingRulesScopedListPairIterator{}
-	req = proto.Clone(req).(*computepb.AggregatedListForwardingRulesRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]ForwardingRulesScopedListPair, string, error) {
 		resp := &computepb.ForwardingRuleAggregatedList{}
@@ -524,6 +524,13 @@ func (c *forwardingRulesRESTClient) Get(ctx context.Context, req *computepb.GetF
 	}
 	baseUrl.Path += fmt.Sprintf("/compute/beta/projects/%v/regions/%v/forwardingRules/%v", req.GetProject(), req.GetRegion(), req.GetForwardingRule())
 
+	params := url.Values{}
+	if req != nil && req.View != nil {
+		params.Add("view", fmt.Sprintf("%v", req.GetView()))
+	}
+
+	baseUrl.RawQuery = params.Encode()
+
 	// Build HTTP headers from client and context metadata.
 	hds := []string{"x-goog-request-params", fmt.Sprintf("%s=%v&%s=%v&%s=%v", "project", url.QueryEscape(req.GetProject()), "region", url.QueryEscape(req.GetRegion()), "forwarding_rule", url.QueryEscape(req.GetForwardingRule()))}
 
@@ -647,7 +654,7 @@ func (c *forwardingRulesRESTClient) Insert(ctx context.Context, req *computepb.I
 // project and region.
 func (c *forwardingRulesRESTClient) List(ctx context.Context, req *computepb.ListForwardingRulesRequest, opts ...gax.CallOption) *ForwardingRuleIterator {
 	it := &ForwardingRuleIterator{}
-	req = proto.Clone(req).(*computepb.ListForwardingRulesRequest)
+	req = proto.CloneOf(req)
 	unm := protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
 	it.InternalFetch = func(pageSize int, pageToken string) ([]*computepb.ForwardingRule, string, error) {
 		resp := &computepb.ForwardingRuleList{}

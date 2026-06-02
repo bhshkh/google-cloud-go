@@ -1,5 +1,21 @@
 # Changes
 
+## [1.1.0](https://github.com/googleapis/google-cloud-go/releases/tag/datamanager%2Fv1.1.0) (2026-05-21)
+
+### Features
+
+* update API sources and regenerate (#14621) ([6641db8](https://github.com/googleapis/google-cloud-go/commit/6641db88e5a1c62a967d0505d35c3bc1dedefe9f))
+
+## [1.0.0](https://github.com/googleapis/google-cloud-go/releases/tag/datamanager%2Fv1.0.0) (2026-05-08)
+
+## [0.8.0](https://github.com/googleapis/google-cloud-go/releases/tag/datamanager%2Fv0.8.0) (2026-05-07)
+
+## [0.7.0](https://github.com/googleapis/google-cloud-go/releases/tag/datamanager%2Fv0.7.0) (2026-04-30)
+
+## [0.6.0](https://github.com/googleapis/google-cloud-go/releases/tag/datamanager%2Fv0.6.0) (2026-04-13)
+
+## [0.5.0](https://github.com/googleapis/google-cloud-go/releases/tag/datamanager%2Fv0.5.0) (2026-04-09)
+
 ## [0.4.0](https://github.com/googleapis/google-cloud-go/releases/tag/datamanager%2Fv0.4.0) (2026-04-02)
 
 ## [0.3.0](https://github.com/googleapis/google-cloud-go/releases/tag/datamanager%2Fv0.3.0) (2026-03-12)

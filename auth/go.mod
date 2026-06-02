@@ -1,23 +1,23 @@
 module cloud.google.com/go/auth
 
-go 1.25.0
+go 1.25.8
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/s2a-go v0.1.9
-	github.com/googleapis/enterprise-certificate-proxy v0.3.14
-	github.com/googleapis/gax-go/v2 v2.21.0
+	github.com/googleapis/enterprise-certificate-proxy v0.3.16
+	github.com/googleapis/gax-go/v2 v2.22.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.67.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
-	golang.org/x/net v0.52.0
+	golang.org/x/net v0.55.0
 	golang.org/x/time v0.15.0
-	google.golang.org/api v0.274.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9
-	google.golang.org/grpc v1.80.0
+	google.golang.org/api v0.280.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa
+	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -29,9 +29,9 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 )

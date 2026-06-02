@@ -2,6 +2,24 @@
 
 
 
+## [1.36.0](https://github.com/googleapis/google-cloud-go/releases/tag/maps%2Fv1.36.0) (2026-05-28)
+
+### Features
+
+* update API sources and regenerate (#14661) ([d0cd917](https://github.com/googleapis/google-cloud-go/commit/d0cd917ce0ad46a4d2c1cd4ea2ef8efa60b591d3))
+
+### Documentation
+
+* correct the samples (#14632) ([7988942](https://github.com/googleapis/google-cloud-go/commit/7988942ceb456a93a5ca43dc2fde7320bde093bc))
+
+## [1.35.0](https://github.com/googleapis/google-cloud-go/releases/tag/maps%2Fv1.35.0) (2026-05-07)
+
+## [1.34.0](https://github.com/googleapis/google-cloud-go/releases/tag/maps%2Fv1.34.0) (2026-04-30)
+
+## [1.33.0](https://github.com/googleapis/google-cloud-go/releases/tag/maps%2Fv1.33.0) (2026-04-13)
+
+## [1.32.0](https://github.com/googleapis/google-cloud-go/releases/tag/maps%2Fv1.32.0) (2026-04-09)
+
 ## [1.31.0](https://github.com/googleapis/google-cloud-go/releases/tag/maps%2Fv1.31.0) (2026-04-02)
 
 ## [1.30.0](https://github.com/googleapis/google-cloud-go/releases/tag/maps%2Fv1.30.0) (2026-03-26)

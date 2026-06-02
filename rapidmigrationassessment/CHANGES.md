@@ -1,6 +1,14 @@
 # Changes
 
 
+## [1.6.0](https://github.com/googleapis/google-cloud-go/releases/tag/rapidmigrationassessment%2Fv1.6.0) (2026-05-07)
+
+## [1.5.0](https://github.com/googleapis/google-cloud-go/releases/tag/rapidmigrationassessment%2Fv1.5.0) (2026-04-30)
+
+## [1.4.0](https://github.com/googleapis/google-cloud-go/releases/tag/rapidmigrationassessment%2Fv1.4.0) (2026-04-13)
+
+## [1.3.0](https://github.com/googleapis/google-cloud-go/releases/tag/rapidmigrationassessment%2Fv1.3.0) (2026-04-09)
+
 ## [1.2.0](https://github.com/googleapis/google-cloud-go/releases/tag/rapidmigrationassessment%2Fv1.2.0) (2026-04-02)
 
 ## [1.1.8](https://github.com/googleapis/google-cloud-go/compare/rapidmigrationassessment/v1.1.7...rapidmigrationassessment/v1.1.8) (2025-09-22)

@@ -117,21 +117,24 @@ func parseDatabaseName(db string) (project, instance, database string, err error
 // Client is a client for reading and writing data to a Cloud Spanner database.
 // A client is safe to use concurrently, except for its Close method.
 type Client struct {
-	sc                   *sessionClient
-	sm                   *sessionManager
-	logger               *log.Logger
-	qo                   QueryOptions
-	ro                   ReadOptions
-	ao                   []ApplyOption
-	txo                  TransactionOptions
-	bwo                  BatchWriteOptions
-	ct                   *commonTags
-	disableRouteToLeader bool
-	dro                  *sppb.DirectedReadOptions
-	otConfig             *openTelemetryConfig
-	metricsTracerFactory *builtinMetricsTracerFactory
-	clientContext        *sppb.RequestOptions_ClientContext
-	locationRouter       *locationRouter
+	sc                     *sessionClient
+	sm                     *sessionManager
+	logger                 *log.Logger
+	qo                     QueryOptions
+	ro                     ReadOptions
+	ao                     []ApplyOption
+	txo                    TransactionOptions
+	bwo                    BatchWriteOptions
+	ct                     *commonTags
+	disableRouteToLeader   bool
+	dro                    *sppb.DirectedReadOptions
+	otConfig               *openTelemetryConfig
+	metricsTracerFactory   *builtinMetricsTracerFactory
+	clientContext          *sppb.RequestOptions_ClientContext
+	locationRouter         *locationRouter
+	enableAutoTagging      bool
+	autoTaggingPackages    []string
+	autoTaggingTracerLimit int
 }
 
 // DatabaseName returns the full name of a database, e.g.,
@@ -285,6 +288,9 @@ type ClientConfig struct {
 	// SessionPoolConfig is the configuration for session pool.
 	SessionPoolConfig
 
+	// DynamicChannelPoolConfig is the opt-in configuration for dynamic gRPC channel pooling.
+	DynamicChannelPoolConfig DynamicChannelPoolConfig
+
 	// SessionLabels for the sessions created by this client.
 	// See https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1#session
 	// for more info.
@@ -380,6 +386,22 @@ type ClientConfig struct {
 	//
 	// Default: false
 	EnableDirectAccess bool
+
+	// EnableAutoTagging is an opt-in flag that automatically adds transaction tags to all
+	// read/write transactions and request tags to all statements in read-only transactions
+	// based on the name of the method that started the transaction.
+	EnableAutoTagging bool
+
+	// AutoTaggingPackages is an optional list of target package name prefixes.
+	// Use this to indicate which package names are part of the application.
+	// A tag name will be based on the first method that is found in the call stack
+	// that is part of the application. If no package names are specified in this option,
+	// auto-tagging will look for the first method that it can find that is not part of the
+	// Spanner client or a system package.
+	AutoTaggingPackages []string
+
+	// AutoTaggingTracerLimit specifies depth limit for stack-trace walking.
+	AutoTaggingTracerLimit int
 }
 
 type openTelemetryConfig struct {
@@ -447,6 +469,93 @@ func (fw *fallbackWrapper) Close() error {
 		return err1
 	}
 	return err2
+}
+
+func isDCPEnabledForConfig(config ClientConfig, gme *grpcgcp.GCPMultiEndpoint) bool {
+	return config.DynamicChannelPoolConfig.DCPEnabled &&
+		gme == nil &&
+		!isExperimentalLocationAPIEnabledForConfig(config) &&
+		os.Getenv("SPANNER_EMULATOR_HOST") == ""
+}
+
+func createDCPConnPool(
+	ctx context.Context,
+	database string,
+	config ClientConfig,
+	sessionLabels map[string]string,
+	md metadata.MD,
+	metricsTracerFactory *builtinMetricsTracerFactory,
+	opts ...option.ClientOption,
+) (gtransport.ConnPool, *sessionClient, error) {
+	reqIDInjector := new(requestIDHeaderInjector)
+	dcpOpts := append([]option.ClientOption{}, opts...)
+	dcpOpts = append(dcpOpts,
+		option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(reqIDInjector.interceptStream)),
+		option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(reqIDInjector.interceptUnary)),
+	)
+	sc := newSessionClient(nil, database, config.UserAgent, sessionLabels, config.DatabaseRole, config.DisableRouteToLeader, md, config.BatchTimeout, config.Logger, config.CallOptions)
+	sc.metricsTracerFactory = metricsTracerFactory
+	dial := func(dialCtx context.Context) (gtransport.ConnPool, error) {
+		return gtransport.DialPool(dialCtx, allClientOpts(1, config.Compression, config.EnableDirectAccess, dcpOpts...)...)
+	}
+	dcp, err := newDynamicChannelPool(ctx, sc, config.DynamicChannelPoolConfig, dial)
+	if err != nil {
+		return nil, nil, err
+	}
+	sc.connPool = dcp
+	sc.dynamicPool = dcp
+	return dcp, sc, nil
+}
+
+func createFallbackConnPool(
+	ctx context.Context,
+	config ClientConfig,
+	hasNumChannelsConfig bool,
+	metricsTracerFactory *builtinMetricsTracerFactory,
+	opts ...option.ClientOption,
+) (gtransport.ConnPool, []option.ClientOption, error) {
+	reqIDInjector := new(requestIDHeaderInjector)
+	opts = append(opts,
+		option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(reqIDInjector.interceptStream)),
+		option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(reqIDInjector.interceptUnary)),
+	)
+	allOpts := allClientOpts(config.NumChannels, config.Compression, config.EnableDirectAccess, opts...)
+	primaryConn, err := gtransport.DialPool(ctx, allOpts...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fallbackConnOpts := append(allOpts, internaloption.EnableDirectPath(false))
+	fallbackConn, err := gtransport.DialPool(ctx, fallbackConnOpts...)
+	if err != nil {
+		primaryConn.Close()
+		return nil, nil, err
+	}
+
+	if hasNumChannelsConfig && ((primaryConn.Num() != config.NumChannels) || (fallbackConn.Num() != config.NumChannels)) {
+		primaryConn.Close()
+		fallbackConn.Close()
+		return nil, nil, spannerErrorf(codes.InvalidArgument, "Connection pool mismatch: NumChannels=%v, primaryConn.Num()=%v, fallbackConn.Num()=%v", config.NumChannels, primaryConn.Num(), fallbackConn.Num())
+	}
+
+	fbOpts := grpcgcp.NewGCPFallbackOptions()
+	fbOpts.EnableFallback = true
+	fbOpts.ErrorRateThreshold = 1
+	fbOpts.MinFailedCalls = 1
+	fbOpts.Period = time.Minute * 3
+
+	if metricsTracerFactory != nil && metricsTracerFactory.meterProvider != nil {
+		fbOpts.MeterProvider = metricsTracerFactory.meterProvider
+	}
+
+	gcpFallback, err := grpcgcp.NewGCPFallback(ctx, primaryConn, fallbackConn, fbOpts)
+	if err != nil {
+		primaryConn.Close()
+		fallbackConn.Close()
+		return nil, nil, err
+	}
+
+	return &fallbackWrapper{gcpFallback, primaryConn, fallbackConn}, allOpts, nil
 }
 
 func newClientWithConfig(ctx context.Context, database string, config ClientConfig, gme *grpcgcp.GCPMultiEndpoint, opts ...option.ClientOption) (c *Client, err error) {
@@ -527,56 +636,56 @@ func newClientWithConfig(ctx context.Context, database string, config ClientConf
 
 	var pool gtransport.ConnPool
 	var endpointClientOpts []option.ClientOption
+	var sc *sessionClient
 
-	if gme != nil {
+	isFallbackEnabled := true
+	if val, ok := os.LookupEnv("GOOGLE_SPANNER_ENABLE_GCP_FALLBACK"); ok {
+		if b, err := strconv.ParseBool(val); err == nil {
+			isFallbackEnabled = b
+		}
+	}
+
+	// TODO(loite): Remove as the original map cannot be changed by the user
+	// anyways, and the client library is also not changing it.
+	// Make a copy of labels.
+	sessionLabels := make(map[string]string)
+	for k, v := range config.SessionLabels {
+		sessionLabels[k] = v
+	}
+
+	md := metadata.Pairs(resourcePrefixHeader, database)
+	if config.Compression == gzip.Name {
+		md.Append(requestsCompressionHeader, gzip.Name)
+	}
+	// Append end to end tracing header if SPANNER_ENABLE_END_TO_END_TRACING
+	// environment variable has been set or client has passed the opt-in
+	// option in ClientConfig.
+	endToEndTracingEnvironmentVariable := os.Getenv("SPANNER_ENABLE_END_TO_END_TRACING")
+	if config.EnableEndToEndTracing || strings.EqualFold(endToEndTracingEnvironmentVariable, "true") {
+		md.Append(endToEndTracingHeader, "true")
+	}
+
+	if isAFEBuiltInMetricEnabled {
+		md.Append(afeMetricHeader, "true")
+	}
+	if config.BatchTimeout == 0 {
+		config.BatchTimeout = time.Minute
+	}
+
+	if isDCPEnabledForConfig(config, gme) {
+		pool, sc, err = createDCPConnPool(ctx, database, config, sessionLabels, md, metricsTracerFactory, opts...)
+		if err != nil {
+			return nil, err
+		}
+	} else if gme != nil {
 		// Use GCPMultiEndpoint if provided.
 		pool = &gmeWrapper{gme}
 		endpointClientOpts = append(endpointClientOpts, opts...)
-	} else if isFallbackEnabled, _ := strconv.ParseBool(os.Getenv("GOOGLE_SPANNER_ENABLE_GCP_FALLBACK")); isFallbackEnabled && isDirectPathEnabled {
-		var primaryConn gtransport.ConnPool
-		var fallbackConn gtransport.ConnPool
-		reqIDInjector := new(requestIDHeaderInjector)
-		opts = append(opts,
-			option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(reqIDInjector.interceptStream)),
-			option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(reqIDInjector.interceptUnary)),
-		)
-		allOpts := allClientOpts(config.NumChannels, config.Compression, config.EnableDirectAccess, opts...)
-		endpointClientOpts = append(endpointClientOpts, allOpts...)
-		primaryConn, err = gtransport.DialPool(ctx, allOpts...)
+	} else if isFallbackEnabled && isDirectPathEnabled {
+		pool, endpointClientOpts, err = createFallbackConnPool(ctx, config, hasNumChannelsConfig, metricsTracerFactory, opts...)
 		if err != nil {
 			return nil, err
 		}
-
-		fallbackConnOpts := append(allOpts, internaloption.EnableDirectPath(false))
-		fallbackConn, err = gtransport.DialPool(ctx, fallbackConnOpts...)
-		if err != nil {
-			primaryConn.Close()
-			return nil, err
-		}
-
-		if hasNumChannelsConfig && ((primaryConn.Num() != config.NumChannels) || (fallbackConn.Num() != config.NumChannels)) {
-			primaryConn.Close()
-			fallbackConn.Close()
-			return nil, spannerErrorf(codes.InvalidArgument, "Connection pool mismatch: NumChannels=%v, primaryConn.Num()=%v, fallbackConn.Num()=%v", config.NumChannels, primaryConn.Num(), fallbackConn.Num())
-		}
-
-		fbOpts := grpcgcp.NewGCPFallbackOptions()
-		fbOpts.EnableFallback = true
-		fbOpts.ErrorRateThreshold = 1
-		fbOpts.MinFailedCalls = 1
-
-		if metricsTracerFactory != nil && metricsTracerFactory.meterProvider != nil {
-			fbOpts.MeterProvider = metricsTracerFactory.meterProvider
-		}
-
-		gcpFallback, err := grpcgcp.NewGCPFallback(ctx, primaryConn, fallbackConn, fbOpts)
-		if err != nil {
-			primaryConn.Close()
-			fallbackConn.Close()
-			return nil, err
-		}
-
-		pool = &fallbackWrapper{gcpFallback, primaryConn, fallbackConn}
 	} else {
 		// Create gtransport ConnPool as usual if MultiEndpoint is not used.
 		// gRPC options.
@@ -601,14 +710,6 @@ func newClientWithConfig(ctx context.Context, database string, config ClientConf
 		}
 	}
 
-	// TODO(loite): Remove as the original map cannot be changed by the user
-	// anyways, and the client library is also not changing it.
-	// Make a copy of labels.
-	sessionLabels := make(map[string]string)
-	for k, v := range config.SessionLabels {
-		sessionLabels[k] = v
-	}
-
 	// Default configs for session pool.
 	if config.MaxOpened == 0 {
 		config.MaxOpened = uint64(pool.Num() * 100)
@@ -616,30 +717,13 @@ func newClientWithConfig(ctx context.Context, database string, config ClientConf
 	if config.MaxBurst == 0 {
 		config.MaxBurst = DefaultSessionPoolConfig.MaxBurst
 	}
-	if config.BatchTimeout == 0 {
-		config.BatchTimeout = time.Minute
-	}
-
-	md := metadata.Pairs(resourcePrefixHeader, database)
-	if config.Compression == gzip.Name {
-		md.Append(requestsCompressionHeader, gzip.Name)
-	}
-	// Append end to end tracing header if SPANNER_ENABLE_END_TO_END_TRACING
-	// environment variable has been set or client has passed the opt-in
-	// option in ClientConfig.
-	endToEndTracingEnvironmentVariable := os.Getenv("SPANNER_ENABLE_END_TO_END_TRACING")
-	if config.EnableEndToEndTracing || endToEndTracingEnvironmentVariable == "true" {
-		md.Append(endToEndTracingHeader, "true")
-	}
-
-	if isAFEBuiltInMetricEnabled {
-		md.Append(afeMetricHeader, "true")
-	}
 
 	// Multiplexed sessions are always enabled as the session pool has been removed.
 
 	// Create a session client.
-	sc := newSessionClient(pool, database, config.UserAgent, sessionLabels, config.DatabaseRole, config.DisableRouteToLeader, md, config.BatchTimeout, config.Logger, config.CallOptions)
+	if sc == nil {
+		sc = newSessionClient(pool, database, config.UserAgent, sessionLabels, config.DatabaseRole, config.DisableRouteToLeader, md, config.BatchTimeout, config.Logger, config.CallOptions)
+	}
 
 	// Create an OpenTelemetry configuration
 	otConfig, err := createOpenTelemetryConfig(ctx, config.OpenTelemetryMeterProvider, config.Logger, sc.id, database)
@@ -654,24 +738,36 @@ func newClientWithConfig(ctx context.Context, database string, config ClientConf
 	sc.mu.Unlock()
 
 	var locationRouter *locationRouter
-	if isExperimentalLocationAPIEnabled() {
+	var sharedLocationAwareState *locationAwareState
+	if isExperimentalLocationAPIEnabledForConfig(config) {
 		sc.baseClientOpts = endpointClientOpts
+		defaultEndpointAddress := ""
 		if conn := pool.Conn(); conn != nil {
 			sc.endpointAuthority = normalizeAuthorityTarget(conn.Target())
+			defaultEndpointAddress = sc.endpointAuthority
 		}
-		epCache := newEndpointClientCache(sc.createEndpointClient)
+		// Some transport wrappers, such as GCPMultiEndpoint and GCPFallback,
+		// intentionally do not expose a concrete default *grpc.ClientConn and
+		// return nil from Conn(). In that case location-aware routing remains
+		// enabled; we only skip deriving the default endpoint metadata used for
+		// authority preservation and default-endpoint diagnostics.
+		epCache := newEndpointClientCacheWithDefaultAddress(sc.createEndpointClient, defaultEndpointAddress)
 		locationRouter = newLocationRouter(epCache)
+		locationRouter.lifecycleManager = newEndpointLifecycleManager(epCache)
+		locationRouter.finder.setLifecycleManager(locationRouter.lifecycleManager)
+		sharedLocationAwareState = newLocationAwareState(
+			nil,
+			locationRouter,
+			epCache,
+			newEndpointOverloadCooldownTracker(),
+		)
 	}
 
 	// Create a session manager.
-	sp, err := newSessionManager(sc, config.SessionPoolConfig)
+	sp, err := newSessionManager(sc, config.SessionPoolConfig, sharedLocationAwareState)
 	if err != nil {
 		sc.close()
 		return nil, err
-	}
-
-	if locationRouter != nil {
-		sp.locationRouter = locationRouter
 	}
 
 	if enableLogClientOptions() {
@@ -690,22 +786,33 @@ Multiplexed session enabled: true
 			projectID, config.NumChannels, !config.DisableRouteToLeader, isDirectPathEnabled,
 			config.EnableEndToEndTracing, !config.DisableNativeMetrics, isGRPCBuiltInMetricsEnabled)
 	}
+	if strings.EqualFold(os.Getenv("SPANNER_DISABLE_AUTO_TAGGING"), "true") {
+		config.EnableAutoTagging = false
+	} else if strings.EqualFold(os.Getenv("SPANNER_ENABLE_AUTO_TAGGING"), "true") {
+		config.EnableAutoTagging = true
+	}
+	if config.EnableAutoTagging && config.AutoTaggingTracerLimit == 0 {
+		config.AutoTaggingTracerLimit = 50
+	}
 	c = &Client{
-		sc:                   sc,
-		sm:                   sp,
-		logger:               config.Logger,
-		qo:                   getQueryOptions(config.QueryOptions),
-		ro:                   config.ReadOptions,
-		ao:                   config.ApplyOptions,
-		txo:                  config.TransactionOptions,
-		bwo:                  config.BatchWriteOptions,
-		ct:                   getCommonTags(sc),
-		disableRouteToLeader: config.DisableRouteToLeader,
-		dro:                  config.DirectedReadOptions,
-		otConfig:             otConfig,
-		metricsTracerFactory: metricsTracerFactory,
-		clientContext:        config.ClientContext,
-		locationRouter:       locationRouter,
+		sc:                     sc,
+		sm:                     sp,
+		logger:                 config.Logger,
+		qo:                     getQueryOptions(config.QueryOptions),
+		ro:                     config.ReadOptions,
+		ao:                     config.ApplyOptions,
+		txo:                    config.TransactionOptions,
+		bwo:                    config.BatchWriteOptions,
+		ct:                     getCommonTags(sc),
+		disableRouteToLeader:   config.DisableRouteToLeader,
+		dro:                    config.DirectedReadOptions,
+		otConfig:               otConfig,
+		metricsTracerFactory:   metricsTracerFactory,
+		clientContext:          config.ClientContext,
+		locationRouter:         locationRouter,
+		enableAutoTagging:      config.EnableAutoTagging,
+		autoTaggingPackages:    config.AutoTaggingPackages,
+		autoTaggingTracerLimit: config.AutoTaggingTracerLimit,
 	}
 	return c, nil
 }
@@ -929,6 +1036,9 @@ func (c *Client) Single() *ReadOnlyTransaction {
 	t.txReadOnly.ro.DirectedReadOptions = c.dro
 	t.txReadOnly.ro.LockHint = sppb.ReadRequest_LOCK_HINT_UNSPECIFIED
 	t.txReadOnly.clientContext = c.clientContext
+	if c.enableAutoTagging {
+		t.cachedRequestTag = getCallStackTag(c.autoTaggingPackages, c.autoTaggingTracerLimit)
+	}
 
 	t.ct = c.ct
 	t.otConfig = c.otConfig
@@ -958,6 +1068,9 @@ func (c *Client) ReadOnlyTransaction() *ReadOnlyTransaction {
 	t.txReadOnly.ro.DirectedReadOptions = c.dro
 	t.txReadOnly.ro.LockHint = sppb.ReadRequest_LOCK_HINT_UNSPECIFIED
 	t.txReadOnly.clientContext = c.clientContext
+	if c.enableAutoTagging {
+		t.cachedRequestTag = getCallStackTag(c.autoTaggingPackages, c.autoTaggingTracerLimit)
+	}
 
 	t.ct = c.ct
 	t.otConfig = c.otConfig
@@ -1031,6 +1144,9 @@ func (c *Client) BatchReadOnlyTransaction(ctx context.Context, tb TimestampBound
 	t.txReadOnly.ro.DirectedReadOptions = c.dro
 	t.txReadOnly.ro.LockHint = sppb.ReadRequest_LOCK_HINT_UNSPECIFIED
 	t.txReadOnly.clientContext = c.clientContext
+	if c.enableAutoTagging {
+		t.cachedRequestTag = getCallStackTag(c.autoTaggingPackages, c.autoTaggingTracerLimit)
+	}
 
 	t.ct = c.ct
 	t.otConfig = c.otConfig
@@ -1069,6 +1185,9 @@ func (c *Client) BatchReadOnlyTransactionFromID(tid BatchReadOnlyTransactionID) 
 	t.txReadOnly.ro.DirectedReadOptions = c.dro
 	t.txReadOnly.ro.LockHint = sppb.ReadRequest_LOCK_HINT_UNSPECIFIED
 	t.txReadOnly.clientContext = c.clientContext
+	if c.enableAutoTagging {
+		t.cachedRequestTag = getCallStackTag(c.autoTaggingPackages, c.autoTaggingTracerLimit)
+	}
 
 	t.ct = c.ct
 	t.otConfig = c.otConfig
@@ -1126,6 +1245,9 @@ func (c *Client) ReadWriteTransactionWithOptions(ctx context.Context, f func(con
 func (c *Client) rwTransaction(ctx context.Context, f func(context.Context, *ReadWriteTransaction) error, options TransactionOptions) (resp CommitResponse, err error) {
 	if err := checkNestedTxn(ctx); err != nil {
 		return resp, err
+	}
+	if c.enableAutoTagging && options.TransactionTag == "" {
+		options.TransactionTag = getCallStackTag(c.autoTaggingPackages, c.autoTaggingTracerLimit)
 	}
 	var (
 		sh      *sessionHandle
@@ -1300,6 +1422,9 @@ func (c *Client) Apply(ctx context.Context, ms []*Mutation, opts ...ApplyOption)
 		}, TransactionOptions{CommitPriority: ao.priority, TransactionTag: ao.transactionTag, ExcludeTxnFromChangeStreams: ao.excludeTxnFromChangeStreams, CommitOptions: ao.commitOptions, IsolationLevel: ao.isolationLevel})
 		return resp.CommitTs, err
 	}
+	if c.enableAutoTagging && ao.transactionTag == "" {
+		ao.transactionTag = getCallStackTag(c.autoTaggingPackages, c.autoTaggingTracerLimit)
+	}
 	t := &writeOnlyTransaction{sm: c.sm, commitPriority: ao.priority, transactionTag: ao.transactionTag, disableRouteToLeader: c.disableRouteToLeader, excludeTxnFromChangeStreams: ao.excludeTxnFromChangeStreams, commitOptions: ao.commitOptions, isolationLevel: ao.isolationLevel, clientContext: c.clientContext}
 	return t.applyAtLeastOnce(ctx, ms...)
 }
@@ -1467,6 +1592,9 @@ func (c *Client) BatchWriteWithOptions(ctx context.Context, mgs []*MutationGroup
 	}()
 
 	opts = c.bwo.merge(opts)
+	if c.enableAutoTagging && opts.TransactionTag == "" {
+		opts.TransactionTag = getCallStackTag(c.autoTaggingPackages, c.autoTaggingTracerLimit)
+	}
 
 	mgsPb, err := mutationGroupsProto(mgs)
 	if err != nil {

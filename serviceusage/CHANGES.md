@@ -1,5 +1,13 @@
 # Changes
 
+## [1.14.0](https://github.com/googleapis/google-cloud-go/releases/tag/serviceusage%2Fv1.14.0) (2026-05-07)
+
+## [1.13.0](https://github.com/googleapis/google-cloud-go/releases/tag/serviceusage%2Fv1.13.0) (2026-04-30)
+
+## [1.12.0](https://github.com/googleapis/google-cloud-go/releases/tag/serviceusage%2Fv1.12.0) (2026-04-13)
+
+## [1.11.0](https://github.com/googleapis/google-cloud-go/releases/tag/serviceusage%2Fv1.11.0) (2026-04-09)
+
 ## [1.10.0](https://github.com/googleapis/google-cloud-go/releases/tag/serviceusage%2Fv1.10.0) (2026-04-02)
 
 ## [1.9.7](https://github.com/googleapis/google-cloud-go/compare/serviceusage/v1.9.6...serviceusage/v1.9.7) (2025-10-15)

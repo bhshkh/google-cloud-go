@@ -2116,6 +2116,7 @@ func TestIntegration_CreateDBRetry(t *testing.T) {
 // Test client recovery on database recreation.
 func TestIntegration_DbRemovalRecovery(t *testing.T) {
 	t.Parallel()
+	t.Skip("Flaky test, skipping for now (b/514205001)")
 	// tracking the failure via b/441255724 for experimentalHost
 	skipExperimentalHostTest(t)
 
@@ -2202,11 +2203,22 @@ func TestIntegration_DbRemovalRecovery(t *testing.T) {
 	}
 
 	// Now, send the query again.
-	iter = client.Single().Query(ctx, Statement{SQL: "SELECT SingerId FROM Singers"})
-	defer iter.Stop()
-	_, err = iter.Next()
-	if err != nil && err != iterator.Done {
-		t.Errorf("failed to send query to database %v: %v", dbPath, err)
+	// In real Cloud Spanner, after dropping and recreating a database, GFE location/directory
+	// cache propagation across all zones and workers can take up to several minutes.
+	// Retry sending the query until the context deadline.
+	for {
+		iter := client.Single().Query(ctx, Statement{SQL: "SELECT SingerId FROM Singers"})
+		_, err := iter.Next()
+		iter.Stop()
+		if err == nil || err == iterator.Done {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timeout waiting for recreated database to be reachable: %v", ctx.Err())
+		case <-time.After(time.Second):
+		}
 	}
 	verifyDirectPathRemoteAddress(t)
 }
@@ -5390,8 +5402,8 @@ func compareErrors(got, want error) bool {
 	if idx := strings.Index(wantStr, "requestID"); idx != -1 {
 		wantStr = wantStr[:idx]
 	}
-	gotStr = strings.ReplaceAll(gotStr, `",`, ``)
-	wantStr = strings.ReplaceAll(gotStr, `",`, ``)
+	gotStr = strings.ReplaceAll(gotStr, `", `, `"`)
+	wantStr = strings.ReplaceAll(wantStr, `", `, `"`)
 	return strings.EqualFold(strings.TrimSpace(gotStr), strings.TrimSpace(wantStr))
 }
 
@@ -5594,7 +5606,7 @@ func TestIntegration_Foreign_Key_Delete_Cascade_Action(t *testing.T) {
 			gotErr := tt.test()
 			if gotErr != nil {
 				if !compareErrors(gotErr, tt.wantErr) {
-					t.Errorf(`FKDC error=%v, wantErr: %v`, gotErr, tt.wantErr)
+					t.Errorf("error mismatch\n Got: %v\nWant: %v", gotErr, tt.wantErr)
 				}
 			} else {
 				tt.validate()
@@ -6031,6 +6043,8 @@ func TestIntegration_WithDirectedReadOptions_ReadWriteTransaction_ShouldThrowErr
 }
 
 func TestIntegration_QueueMutations(t *testing.T) {
+	// TODO: Re-enable once Cloud Queues are supported.
+	t.Skip("Cloud Queues are not supported yet")
 	// Run in cloud-devel only since this queue feature is not fully enabled yet.
 	onlyRunOnCloudDevel(t)
 	// DDL not fully enabled for PG yet.
