@@ -18,6 +18,8 @@ modules:
         disable_gapic: true
       - path: google/bigtable/admin/v2
         client_directory: admin/apiv2
+        enabled_generator_features:
+        - F_selective_gapic_generation
 
   - name: cloudbuild
     apis:
