@@ -690,6 +690,25 @@ var testCases = []testCase{
 		"",
 	},
 	{
+		"omit empty, fields populated, 1st, 2nd and 4th elements in slice are empty",
+		&Omit{
+			A: "a",
+			B: 10,
+			C: true,
+			F: []int{0, 0, 11, 0, 12, 0},
+			S: S{St: "string"},
+		},
+		&PropertyList{
+			Property{Name: "A", Value: "a", NoIndex: false},
+			Property{Name: "Bb", Value: int64(10), NoIndex: false},
+			Property{Name: "C", Value: true, NoIndex: true},
+			Property{Name: "F", Value: []interface{}{int64(11), int64(12)}, NoIndex: false},
+			Property{Name: "St", Value: "string", NoIndex: false},
+		},
+		"",
+		"",
+	},
+	{
 		"omit empty does not propagate",
 		&NoOmits{
 			No: []NoOmit{
