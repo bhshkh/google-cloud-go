@@ -821,6 +821,12 @@ func IfErrorBoolean(tryExpr BooleanExpression, catchExpr BooleanExpression) Bool
 	return &baseBooleanExpression{baseFunction: newBaseFunction("if_error", []Expression{tryExpr, catchExpr})}
 }
 
+// Error creates an expression that evaluates to an error with the given message.
+// - message is the error message to include when evaluation terminates with an error.
+func Error(message string) Expression {
+	return newBaseFunction("error", []Expression{ConstantOf(message)})
+}
+
 // IfAbsent creates an expression that returns a default value if an expression evaluates to an absent value.
 // - exprOrField is the field or expression to check. It can be a field path string, [FieldPath] or an [Expression].
 // - elseValueOrExpr is the value or expression to return if the expression is absent. It can be a constant or an [Expression].

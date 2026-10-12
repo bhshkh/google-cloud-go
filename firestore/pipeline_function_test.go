@@ -271,6 +271,18 @@ func TestLogicalFunctions(t *testing.T) {
 				},
 			}},
 		},
+		{
+			desc: "Error",
+			expr: Error("custom error message"),
+			want: &pb.Value{ValueType: &pb.Value_FunctionValue{
+				FunctionValue: &pb.Function{
+					Name: "error",
+					Args: []*pb.Value{
+						{ValueType: &pb.Value_StringValue{StringValue: "custom error message"}},
+					},
+				},
+			}},
+		},
 	}
 
 	for _, tc := range testcases {
